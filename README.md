@@ -27,5 +27,5 @@ python3 sleeptober-bot_main.py
 
 # Additional Notes
 
-- A file `sleeptober-bot_token.txt` containing the Discord bot token in plain text is required.
+- A file `sleeptober-bot_config.json` containing the Discord bot token in plain text is required.
 - A file `sleeptober-bot_data.json` containing bot data will be automatically created if it doesn't exist.

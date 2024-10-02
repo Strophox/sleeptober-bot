@@ -1,6 +1,6 @@
 # Custom files
 sleeptober-bot_data.json
-sleeptober-bot_token.txt
+sleeptober-bot_config.json
 sleeptober-bot_venv/
 
 # Byte-compiled / optimized / DLL files
