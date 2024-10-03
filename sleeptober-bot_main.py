@@ -105,7 +105,7 @@ async def slept(
     # Compute who is being logged.
     if ctx.message.author.bot:
         await ctx.message.add_reaction('🤖')
-        await ctx.message.reply("(Bots cannot participate in Sleeptober (yet))")
+        await ctx.message.reply("(Bots cannot participate in Sleeptober (yet))", delete_after=60)
         return
     else:
         user_id = str(ctx.message.author.id)
@@ -120,7 +120,7 @@ async def slept(
             hours = float(hours_slept)
             if not 0 <= hours <= 24:
                 await ctx.message.add_reaction('🙅')
-                await ctx.message.reply("(Turns out you can only sleep between [0.0, 24.0]h a day)")
+                await ctx.message.reply("(Turns out you can only sleep between [0.0, 24.0]h a day)", delete_after=60)
                 return
         except:
             # Try parsing as `HH:MM`.
@@ -132,7 +132,7 @@ async def slept(
                 hours = hh + mm / 60
             except:
                 await ctx.message.add_reaction('🙅')
-                await ctx.message.reply(f"(That's not a valid time in `HH:MM` format)")
+                await ctx.message.reply(f"(That's not a valid time in `HH:MM` format)", delete_after=60)
                 return
 
     # Compute which day is being logged.
@@ -141,7 +141,7 @@ async def slept(
         day_cap = current_day_index+1 if current_day_index is not None else 31 # FIXME What if the users queries this *before* October?
         if not 1 <= day <= day_cap:
             await ctx.message.add_reaction('🙅')
-            await ctx.message.reply(f"(The night whose value you want to manually set needs to be in the range [1, {day_cap}])")
+            await ctx.message.reply(f"(The night whose value you want to manually set needs to be in the range [1, {day_cap}])", delete_after=60)
             return
         else:
             day_index = day - 1
@@ -149,7 +149,7 @@ async def slept(
         # No day provided by user, default to setting last night's sleep.
         if current_day_index is None:
             await ctx.message.add_reaction('📆')
-            await ctx.message.reply("(Last night wasn't part of Sleeptober)")
+            await ctx.message.reply("(Last night wasn't part of Sleeptober)", delete_after=60)
             return
         else:
             day_index = current_day_index
