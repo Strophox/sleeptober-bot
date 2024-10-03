@@ -122,17 +122,17 @@ async def slept(
                 await ctx.message.add_reaction('🙅')
                 await ctx.message.reply("(Turns out you can only sleep between [0.0, 24.0]h a day)")
                 return
-        except Exception:
+        except:
             # Try parsing as `HH:MM`.
             try:
                 [hh,mm] = hours_slept.split(':')
                 (hh,mm) = (int(hh),int(mm))
-                if not (0 <= hh <= 24 and 0 <= mm <= 60) or (hh == 24 and mm != 0):
-                    raise Exception
+                if not (0 <= hh <= 24 and 0 <= mm <= 59) or (hh == 24 and mm != 0):
+                    raise ValueError
                 hours = hh + mm / 60
-            except Exception:
+            except:
                 await ctx.message.add_reaction('🙅')
-                await ctx.message.reply(f"('{hours_slept}' is not a valid time in `HH:MM` format)")
+                await ctx.message.reply(f"(That's not a valid time in `HH:MM` format)")
                 return
 
     # Compute which day is being logged.
@@ -194,7 +194,7 @@ async def profile(ctx):
             # Prepare ASCII graph.
             (maxwidth_day_index, maxwidth_hours) = (len(str(len(user_data))), len(str(max(f"{hours:2.2f}" for hours in user_data if hours is not None))))
             embed.description += "```c\n"
-            embed.description +=  f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}}  ┍{7*'┯'}┯┯{14*'┯'}┑\n"
+            embed.description +=  f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}}  ┍{7*'┯'}┳┳{14*'┯'}┑\n"
             for day_index, hours in enumerate(user_data):
                 quarter_hours = round(hours * 4) if hours is not None else 0
                 chars = ['│'] + 7*[' '] + 2*['┆'] + 14*[' '] + ['│']
