@@ -92,7 +92,7 @@ def compute_scoring(user_data):
                 hours_too_few += 8 - hours
             elif 9 < hours:
                 hours_too_many += hours - 9
-    abstract_score = logged_total - hours_too_few - hours_too_many / 2
+    abstract_score = 100 * logged_total - hours_too_few - hours_too_many / 2
     """
     # Notes about Abstract Score
     ## Criteria for scoring
@@ -275,8 +275,7 @@ async def profile(ctx):
             embed.description += f"""{logged_total} days logged.
 Cumulative hours short of 8h sleep: `-{fmt_hours(hours_too_few)}`.
 Cumulative hours above 9h sleep: `+{fmt_hours(hours_too_many)}`.
-Average hours of sleep: {fmt_hours(hours_total / (logged_total or 1))}.
-(Abstract score: {abstract_score})"""
+Average hours of sleep: {fmt_hours(hours_total / (logged_total or 1))}."""
         await ctx.message.reply(embed=embed)
 
 @bot.command(aliases=["lb"])
