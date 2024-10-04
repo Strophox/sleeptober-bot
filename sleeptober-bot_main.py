@@ -32,7 +32,7 @@ Official 2024 Prompt List:
 > Sleeptober was created as a challenge to improve one's sleeping skills and develop positive sleeping habits.
 
 Source code: https://github.com/Strophox/sleeptober-bot
-* This bots is developed heavily ad-hoc and just for fun :-)"""
+* This bot is developed heavily ad-hoc and just for fun :-)"""
 
 intents = discord.Intents.default()
 intents.members = True
@@ -63,15 +63,26 @@ def get_sleeptober_index():
     else:
         return None
 
+def fmt_hours(hours):
+    hh = int(hours)
+    mm = round((hours - int(hours)) * 60)
+    return f"{hh}:{mm:02}"
+
+def fmt_hours_f(hours):
+    return f"{hours:2.2f}"
+
 def compute_scoring(user_data):
-    """Compute some relevant stats from user's raw hours-slept-each-night data."""
-    # Total number of days logged.
+    """
+    Compute some relevant stats from user's raw hours-slept-each-night data:
+    - logged_total: Total number of days logged.
+    - hours_total: Total number of hours slept.
+    - hours_too_few: Total number of hours slept too little each night.
+    - hours_too_many: Total number of hours slept too much each night.
+    - abstract_score: Abstract score (higher is better)
+    """
     logged_total = 0
-    # Total number of hours slept.
     hours_total = 0
-    # Total number of hours slept too little each night.
     hours_too_few = 0
-    # Total number of hours slept too much each night.
     hours_too_many = 0
     for hours in user_data:
         if hours is not None:
@@ -81,18 +92,60 @@ def compute_scoring(user_data):
                 hours_too_few += 8 - hours
             elif 9 < hours:
                 hours_too_many += hours - 9
-    scoring = (logged_total, hours_total / (logged_total or 1), hours_too_few, hours_too_many)
-    return scoring
+    abstract_score = logged_total - hours_too_few - hours_too_many / 2
+    """
+    # Notes about Abstract Score
+    ## Criteria for scoring
+    * Close to the idea of original Sleeptober ("Sleep 8 hours [every night]").
+    * Close to the idea of having good sleep (*informal, research scientific criteria).
+    * Reward number of days logged.
+        - Indicative of user participation.
+        - Bigger data/sample size to compute score from.
+    * Punish sleep deficit.
+        - Too little sleep is detrimental:
+        ```
+        0h "good luck"
+        1h "any nap is better than no nap"
+        2h "bruh"
+        3h "💀"
+        4h "it's joever"
+        5h "oh no"
+        6h "not good, but ≈minimum to function alright"
+        7h "still fine, could be closer to 8"
+        ```
+    * Punish oversleeping.
+        - Too much sleep may contribute to otherwise consistent, healthy sleep falling out of balance.
+        - Sleeping way too much may cut into productivity of the next day.
+        - If one slept too little the day before, sleeping more cannot proportionally 'make up' for last night's deficit.
+        ```
+        9h "nice, could be closer to 8"
+        10h "bit long but could be less"
+        11h "this is too long."
+        12-14h "you've lost half your day."
+        15-17h "oh no"
+        17-24h "bruh"
+        ```
+    * Reward consistency / Punish inconsistency.
+        - Consistent sleep is the best.
+        - Sleeping 8h every day but offset by hours isn't actually healthy probably. (*time of sleep currently untracked)
+        - TODO: Incorporate variance?
+    """
+    return (
+        logged_total,
+        hours_total,
+        hours_too_few,
+        hours_too_many,
+        abstract_score,
+    )
 
 def compute_global_leaderboard(data):
     """Generate a a ranked, global leaderboard list."""
-    # Associate scoring to each user.
-    global_leaderboard = [(user_id, compute_scoring(user_data)) for (user_id, user_data) in data.items()]
-
-    # Sort leaderboard
-    global_leaderboard.sort(key=lambda t: (31 - t[1][0], t[1][2], t[1][3]))
-    # (user_id, (logged_total, hours_average, hours_too_few, hours_too_many))
-
+    global_leaderboard = sorted(
+        ((user_id, compute_scoring(user_data))
+            for (user_id, user_data) in data.items()),
+        key=lambda t: t[1][4], # Get abstract_score
+        reverse=True # Sort descendingly
+    )
     return global_leaderboard
 
 @bot.command(aliases=["sleep","s"])
@@ -112,7 +165,7 @@ async def slept(
 
     # Compute how many hours of sleep are being logged.
     if hours_slept is None:
-        await ctx.message.reply("Basic usage: E.g. \"I slept a healthy 8.5h last night <:bedge:1176108745865044011>\" -> `>>=slept 8.5`")
+        await ctx.message.reply("Basic usage:\n- \"I slept a healthy 8.5h last night <:bedge:1176108745865044011>\" -> `>>=slept 8.5`\n- \"Oof! I forgot to log 7h 56min on the night 4th->5th\" -> `>>=slept 7:56 4`")
         return
     else:
         # Try parsing as float.
@@ -132,7 +185,7 @@ async def slept(
                 hours = hh + mm / 60
             except:
                 await ctx.message.add_reaction('🙅')
-                await ctx.message.reply(f"(That's not a valid time in `HH:MM` format)", delete_after=60)
+                await ctx.message.reply(f"(That's not a valid time in `HH:MM` or float format)", delete_after=60)
                 return
 
     # Compute which day is being logged.
@@ -191,10 +244,10 @@ async def profile(ctx):
                 current_day_index = 30 # FIXME What if the users queries this *before* October?
             user_data = data[user_id][:current_day_index+1]
 
-            # Prepare ASCII graph.
-            (maxwidth_day_index, maxwidth_hours) = (len(str(len(user_data))), len(str(max(f"{hours:2.2f}" for hours in user_data if hours is not None))))
+            # Add ASCII graph.
+            (maxwidth_day_index, maxwidth_hours) = (len(str(len(user_data))), 5)
             embed.description += "```c\n"
-            embed.description +=  f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}}  ┍{7*'┯'}┳┳{14*'┯'}┑\n"
+            embed.description +=  f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}} ┍{7*'┯'}┳┳{14*'┯'}┑\n"
             for day_index, hours in enumerate(user_data):
                 quarter_hours = round(hours * 4) if hours is not None else 0
                 chars = ['│'] + 7*[' '] + 2*['┆'] + 14*[' '] + ['│']
@@ -214,13 +267,16 @@ async def profile(ctx):
                         chars[i] = "▎▌▊"[quarter_hours-1] # " ▏▎▍▌▋▊▉█"
                         quarter_hours = 0
                     i += 1
-                embed.description += f"{day_index+1: >{maxwidth_day_index}}. {f'{hours:2.2f}' if hours is not None else '?': <{maxwidth_hours}}h {''.join(chars)}\n"
+                embed.description += f"{day_index+1: >{maxwidth_day_index}}. {f'{fmt_hours(hours)}' if hours is not None else '?': >{maxwidth_hours}} {''.join(chars)}\n"
             #embed.description += f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}}  ┕{7*'┷'}┷┷{14*'┷'}┙\n"
             embed.description += "```\n"
-            (logged_total, hours_average, hours_too_few, hours_too_many) = compute_scoring(user_data)
-            embed.description += f"{logged_total} days logged.\n"
-            embed.description += f"Cumulative hours short of 8h sleep: `-{hours_too_few:2.2f}`.\n"
-            embed.description += f"Cumulative hours above 9h sleep: `+{hours_too_many:2.2f}`.\n"
+            # Add value summary.
+            (logged_total, hours_total, hours_too_few, hours_too_many, abstract_score) = compute_scoring(user_data)
+            embed.description += f"""{logged_total} days logged.
+Cumulative hours short of 8h sleep: `-{fmt_hours(hours_too_few)}`.
+Cumulative hours above 9h sleep: `+{fmt_hours(hours_too_many)}`.
+Average hours of sleep: {fmt_hours(hours_total / (logged_total or 1))}.
+(Abstract score: {abstract_score})"""
         await ctx.message.reply(embed=embed)
 
 @bot.command(aliases=["lb"])
@@ -236,14 +292,14 @@ async def leaderboard(ctx):
             embed.description += "\n...Feelin' empty :("
         else:
             global_leaderboard_32 = compute_global_leaderboard(data)[:32]
-            embed.description += '\n'.join(f"{index+1}. `{f'-{hours_too_few:2.2f}': >6} {f'+{hours_too_many:2.2f}': >6}`, avg.{hours_average:.02f}h <@{user_id}> ({logged_total}d)" for index, (user_id, (logged_total, hours_average, hours_too_few, hours_too_many)) in enumerate(global_leaderboard_32))
+            embed.description += '\n'.join(f"{index+1}. `{f'-{fmt_hours_f(hours_too_few)}': >6} {f'+{fmt_hours_f(hours_too_many)}': >6}`, avg.{fmt_hours_f(hours_total / (logged_total or 1))}h <@{user_id}> ({logged_total}d)" for index, (user_id, (logged_total, hours_total, hours_too_few, hours_too_many, abstract_score)) in enumerate(global_leaderboard_32))
         embed.description += """\n\nHigher rank on the leaderboard is awarded by:
 - maximizing the number of days you logged,
 - minimizing the sum of hours you were short of sleeping 8h each night,
 - minimizing the sum of hours above 9h each night."""
 
         # Make tags load correctly(??) (code inspired by /jackra1n/substiify-v2).
-        mentions_msg = await ctx.send("loading...")
+        mentions_msg = await ctx.send("loading ...")
         mentions_str = ''.join(f"<@{user_id}>" for (user_id, _) in global_leaderboard_32)
         await mentions_msg.edit(content=mentions_str)
         await mentions_msg.delete()
@@ -252,7 +308,7 @@ async def leaderboard(ctx):
 
 @bot.command()
 async def shutdown(ctx):
-    """['admin'] Shuts bot down."""
+    """[admin] Shuts down the bot."""
     # Load user id.
     if ctx.message.author.bot:
         await ctx.message.add_reaction('🤖')
@@ -263,7 +319,7 @@ async def shutdown(ctx):
         await ctx.message.add_reaction('❌')
         return
     else:
-        await ctx.message.add_reaction("<:bedge:1176108745865044011>")
+        await ctx.message.add_reaction('✅')
         exit()
 
 if __name__=="__main__":
