@@ -63,14 +63,6 @@ def get_sleeptober_index():
     else:
         return None
 
-def fmt_hours(hours):
-    hh = int(hours)
-    mm = round((hours - int(hours)) * 60)
-    return f"{hh}:{mm:02}"
-
-def fmt_hours_f(hours):
-    return f"{hours:2.2f}"
-
 def compute_scoring(user_data):
     """
     Compute some relevant stats from user's raw hours-slept-each-night data:
@@ -147,6 +139,14 @@ def compute_global_leaderboard(data):
         reverse=True # Sort descendingly
     )
     return global_leaderboard
+
+def fmt_hours(hours):
+    hh = int(hours)
+    mm = round((hours - int(hours)) * 60)
+    return f"{hh}:{mm:02}"
+
+def fmt_hours_f(hours):
+    return f"{hours:2.2f}"
 
 @bot.command(aliases=["sleep","s"])
 async def slept(
@@ -229,21 +229,22 @@ async def profile(ctx):
             title="Personal Sleeptober Profile",
             description="",
         )
+        # Load user data.
+        if ctx.message.author.bot:
+            await ctx.message.add_reaction("🤖")
+            return
+        else:
+            user_id = str(ctx.message.author.id)
         data = load_data()
-        if not data:
+        user_data = data.get(user_id)
+        if user_data is None:
             embed.description += "...you haven't slept yet <:wokege:1176108188685324319>\n\nParticipate with `>>=slept`"
         else:
-            # Load user data.
-            if ctx.message.author.bot:
-                await ctx.message.add_reaction("🤖")
-                return
-            else:
-                user_id = str(ctx.message.author.id)
+            # Truncate data.
             current_day_index = get_sleeptober_index()
             if current_day_index is None:
                 current_day_index = 30 # FIXME What if the users queries this *before* October?
-            user_data = data[user_id][:current_day_index+1]
-
+            user_data = user_data[:current_day_index+1]
             # Add ASCII graph.
             (maxwidth_day_index, maxwidth_hours) = (len(str(len(user_data))), 5)
             embed.description += "```c\n"
