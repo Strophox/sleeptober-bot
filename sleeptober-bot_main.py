@@ -147,18 +147,19 @@ def compute_global_leaderboard(data):
     return global_leaderboard
 
 def fmt_hours(hours):
-    hh = int(hours)
-    mm = round((hours - int(hours)) * 60)
+    minutes = round(hours * 60)
+    hh = minutes // 60
+    mm = minutes % 60
     return f"{hh}:{mm:02}"
 
 def fmt_hours_f(hours):
     return f"{hours:2.2f}"
 
-@bot.command(aliases=["sleep","s"])
+@bot.command(aliases=["sleep","s",":3"])
 async def slept(
         ctx,
         hours_slept: None | str = commands.parameter(description="hours slept, given as a float in the range [0.0, 24.0] or in common `HH:MM` format"),
-        day: None | int = commands.parameter(default=None, description="night to manually set, in the range [1, <current day>], defaults to last night"),
+        night: None | str = commands.parameter(default=None, description="night to manually set, in the range [1, <yesterday>], defaults to last night"),
     ):
     """Saves how many hours you slept last night."""
     # Compute who is being logged.
@@ -191,32 +192,34 @@ async def slept(
                 hours = hh + mm / 60
             except:
                 await ctx.message.add_reaction('🙅')
-                await ctx.message.reply(f"(That's not a valid time in `HH:MM` or float format)", delete_after=60)
+                await ctx.message.reply(f"(That's not a valid time in `HH:MM` or floating point format)", delete_after=60)
                 return
 
     # Compute which day is being logged.
-    current_day_index = get_sleeptober_index()
-    if day is not None:
-        day_cap = current_day_index+1 if current_day_index is not None else 31 # FIXME What if the users queries this *before* October?
-        if not 1 <= day <= day_cap:
+    current_date_index = get_sleeptober_index()
+    if night is not None:
+        date_cap = current_date_index+1 if current_date_index is not None else 31 # FIXME What if the users queries this *before* October?
+        try:
+            date = int(night)
+            if not 1 <= night <= date_cap:
+                raise ValueError
+        except:
             await ctx.message.add_reaction('🙅')
-            await ctx.message.reply(f"(The night whose value you want to manually set needs to be in the range [1, {day_cap}])", delete_after=60)
+            await ctx.message.reply(f"(If you want to specify the night you're logging (second argument) it needs to be an integer in the range [1, {date_cap}])", delete_after=60)
             return
-        else:
-            day_index = day - 1
+        date_index = date - 1
     else:
         # No day provided by user, default to setting last night's sleep.
-        if current_day_index is None:
+        if current_date_index is None:
             await ctx.message.add_reaction('📆')
-            await ctx.message.reply("(Last night wasn't part of Sleeptober)", delete_after=60)
+            await ctx.message.reply("(Last night wasn't part of Sleeptober - check in next year!)", delete_after=60)
             return
-        else:
-            day_index = current_day_index
+        date_index = current_date_index
 
     # Do the logging.
     # FIXME: There's a data race here where two users can ≈simultaneously write and only one of their infos is stored :wokege:
     data = load_data()
-    data.setdefault(user_id, [None for _ in range(31)])[day_index] = hours
+    data.setdefault(user_id, [None for _ in range(31)])[date_index] = hours
     store_data(data)
 
     # Reaction for visual feedback on success.
@@ -243,6 +246,7 @@ async def profile(ctx):
             user_id = str(ctx.message.author.id)
         data = load_data()
         user_data = data.get(user_id)
+        # Generate profile.
         if user_data is None:
             embed.description += "...you haven't slept yet <:wokege:1176108188685324319>\n\nParticipate with `>>=slept`"
         else:
@@ -279,11 +283,11 @@ async def profile(ctx):
             embed.description += "```\n"
             # Add value summary.
             (logged_total, hours_total, hours_average, hours_variance, hours_too_few, hours_too_many, abstract_score) = compute_scoring(user_data)
-            embed.description += f"""- {logged_total} days logged.
-- Cumulative short of 8h sleep: `-{fmt_hours(hours_too_few)}` h.
-- Cumulative above 9h sleep: `+{fmt_hours(hours_too_many)}` h.
-- Stat. sleep average: `{fmt_hours(hours_average)}` h.
-- Stat. sleep deviation: `{fmt_hours(hours_variance**.5)}` h."""
+            embed.description += f""" • {logged_total} days logged.
+ • Cumulative short of 8h sleep: `-{fmt_hours(hours_too_few)}` h.
+ • Cumulative above 9h sleep: `+{fmt_hours(hours_too_many)}` h.
+ • Stat. sleep average: `{fmt_hours(hours_average)}` h.
+ • Stat. sleep deviation: `{fmt_hours(hours_variance**.5)}` h."""
         await ctx.message.reply(embed=embed)
 
 @bot.command(aliases=["lb"])
@@ -334,7 +338,7 @@ if __name__=="__main__":
     if not os.path.exists(DATA_FILE):
         store_data({})
 
-    # Load bot token from local file.
+    # Load bot config from local file.
     with open(CONFIG_FILE, 'r') as file:
         CONFIG = json.load(file)
 
