@@ -314,7 +314,7 @@ async def leaderboard(ctx):
             embed.description += "\n...Feelin' empty :("
         else:
             global_leaderboard_32 = compute_global_leaderboard(data)[:32]
-            embed.description += '\n'.join(f"{index+1}. `{f'-{fmt_hours_f(hours_too_few)}': >6} {f'+{fmt_hours_f(hours_too_many)}': >6}` ~ {fmt_hours_f(hours_mean)}h <@{user_id}> ({logged_total}d)" for index, (user_id, (
+            embed.description += '\n'.join(f"{index+1}. `{f'-{fmt_hours_f(hours_too_few)}': >6} {f'+{fmt_hours_f(hours_too_many)}': >6}` ~ {fmt_hours(hours_median)} h. <@{user_id}> ({logged_total}d)" for index, (user_id, (
                 logged_total,
                 hours_total,
                 hours_mean,
@@ -324,7 +324,7 @@ async def leaderboard(ctx):
                 hours_too_many,
                 abstract_score,
             )) in enumerate(global_leaderboard_32))
-        embed.description += """\n\nHigher rank on the leaderboard is awarded by:
+        embed.description += """\n\nHigher rank on the leaderboard is achieved by:
 - maximizing the number of days you logged,
 - minimizing the sum of hours you were short of sleeping 8h each night,
 - minimizing the sum of hours above 9h each night."""
