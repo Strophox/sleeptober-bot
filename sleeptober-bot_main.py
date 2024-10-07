@@ -161,6 +161,7 @@ async def slept(
         hours_slept: None | str = commands.parameter(description="hours slept, given as a float in the range [0.0, 24.0] or in common `HH:MM` format"),
         night: None | str = commands.parameter(default=None, description="night to manually set, in the range [1, <yesterday>], defaults to last night"),
     ):
+    print(f"Hi {hours_slept=} {night=}")
     """Saves how many hours you slept last night."""
     # Compute who is being logged.
     if ctx.message.author.bot:
@@ -187,7 +188,7 @@ async def slept(
             try:
                 [hh,mm] = hours_slept.split(':')
                 (hh,mm) = (int(hh),int(mm))
-                if not (0 <= hh <= 24 and 0 <= mm <= 59) or (hh == 24 and mm != 0):
+                if not (0 <= hh < 24 and 0 <= mm < 60 or hh == 24 and mm == 0):
                     raise ValueError
                 hours = hh + mm / 60
             except:
@@ -201,7 +202,7 @@ async def slept(
         date_cap = current_date_index+1 if current_date_index is not None else 31 # FIXME What if the users queries this *before* October?
         try:
             date = int(night)
-            if not 1 <= night <= date_cap:
+            if not (1 <= date <= date_cap):
                 raise ValueError
         except:
             await ctx.message.add_reaction('🙅')
