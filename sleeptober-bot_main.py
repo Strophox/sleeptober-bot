@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import datetime as dt
+import statistics as stats
 import json
 import os
 
@@ -63,7 +64,7 @@ def get_sleeptober_index():
     else:
         return None
 
-def compute_scoring(user_data):
+def compute_stats(user_data):
     """
     Compute some relevant stats from user's raw hours-slept-each-night data:
     - logged_total: Total number of days logged.
@@ -72,23 +73,32 @@ def compute_scoring(user_data):
     - hours_too_many: Total number of hours slept too much each night.
     - abstract_score: Abstract score (higher is better)
     """
-    logged_total = 0
-    hours_total = 0
-    hours_squared_total = 0
+    hours = [h for h in user_data if h is not None]
+    logged_total = len(hours)
+    hours_total = sum(hours)
+
+    hours_mean = stats.mean(hours)
+    hours_median = stats.median(hours)
+    hours_variance = sum(h**2 for h in hours)/(len(hours) or 1) - hours_mean**2
+
     hours_too_few = 0
     hours_too_many = 0
-    for hours in user_data:
-        if hours is not None:
-            logged_total += 1
-            hours_total += hours
-            hours_squared_total += hours**2
-            if hours < 8:
-                hours_too_few += 8 - hours
-            elif 9 < hours:
-                hours_too_many += hours - 9
-    hours_average = hours_total / (logged_total or 1)
-    hours_variance = hours_squared_total / (logged_total or 1) - hours_average ** 2
+    for h in hours:
+        if h < 8:
+            hours_too_few += 8 - h
+        elif 9 < h:
+            hours_too_many += h - 9
     abstract_score = 100 * logged_total - hours_too_few - hours_too_many / 2
+    return (
+        logged_total,
+        hours_total,
+        hours_mean,
+        hours_median,
+        hours_variance,
+        hours_too_few,
+        hours_too_many,
+        abstract_score,
+    )
     """
     # Notes about Abstract Score
     ## Criteria for scoring
@@ -126,22 +136,13 @@ def compute_scoring(user_data):
         - Sleeping 8h every day but offset by hours isn't actually healthy probably. (*time of sleep currently untracked)
         - TODO: Incorporate variance?
     """
-    return (
-        logged_total,
-        hours_total,
-        hours_average,
-        hours_variance,
-        hours_too_few,
-        hours_too_many,
-        abstract_score,
-    )
 
 def compute_global_leaderboard(data):
     """Generate a a ranked, global leaderboard list."""
     global_leaderboard = sorted(
-        ((user_id, compute_scoring(user_data))
+        ((user_id, compute_stats(user_data))
             for (user_id, user_data) in data.items()),
-        key=lambda t: t[1][-1], # Get abstract_score
+        key=lambda tup: tup[1][-1], # Get abstract_score
         reverse=True # Sort descendingly
     )
     return global_leaderboard
@@ -283,12 +284,21 @@ async def profile(ctx):
             #embed.description += f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}}  ┕{7*'┷'}┷┷{14*'┷'}┙\n"
             embed.description += "```\n"
             # Add value summary.
-            (logged_total, hours_total, hours_average, hours_variance, hours_too_few, hours_too_many, abstract_score) = compute_scoring(user_data)
-            embed.description += f""" • {logged_total} days logged.
- • Cumulative short of 8h sleep: `-{fmt_hours(hours_too_few)}` h.
- • Cumulative above 9h sleep: `+{fmt_hours(hours_too_many)}` h.
- • Stat. sleep average: `{fmt_hours(hours_average)}` h.
- • Stat. sleep deviation: `{fmt_hours(hours_variance**.5)}` h."""
+            (
+                logged_total,
+                hours_total,
+                hours_mean,
+                hours_median,
+                hours_variance,
+                hours_too_few,
+                hours_too_many,
+                abstract_score,
+            ) = compute_stats(user_data)
+            embed.description += f"""{logged_total} days logged:
+* Cumulative short of 8h sleep: `-{fmt_hours(hours_too_few)}` h.
+* Cumulative above 9h sleep: `+{fmt_hours(hours_too_many)}` h.
+General statistics for sleep per night:
+* Average `{fmt_hours(hours_mean)}` h, median `{fmt_hours(hours_median)}` h, deviation `{fmt_hours(hours_variance**.5)}` h."""
         await ctx.message.reply(embed=embed)
 
 @bot.command(aliases=["lb"])
@@ -304,7 +314,16 @@ async def leaderboard(ctx):
             embed.description += "\n...Feelin' empty :("
         else:
             global_leaderboard_32 = compute_global_leaderboard(data)[:32]
-            embed.description += '\n'.join(f"{index+1}. `{f'-{fmt_hours_f(hours_too_few)}': >6} {f'+{fmt_hours_f(hours_too_many)}': >6}`, avg.{fmt_hours_f(hours_total / (logged_total or 1))}h <@{user_id}> ({logged_total}d)" for index, (user_id, (logged_total, hours_total, hours_average, hours_variance, hours_too_few, hours_too_many, abstract_score)) in enumerate(global_leaderboard_32))
+            embed.description += '\n'.join(f"{index+1}. `{f'-{fmt_hours_f(hours_too_few)}': >6} {f'+{fmt_hours_f(hours_too_many)}': >6}` ~ {fmt_hours_f(hours_mean)}h <@{user_id}> ({logged_total}d)" for index, (user_id, (
+                logged_total,
+                hours_total,
+                hours_mean,
+                hours_median,
+                hours_variance,
+                hours_too_few,
+                hours_too_many,
+                abstract_score,
+            )) in enumerate(global_leaderboard_32))
         embed.description += """\n\nHigher rank on the leaderboard is awarded by:
 - maximizing the number of days you logged,
 - minimizing the sum of hours you were short of sleeping 8h each night,
