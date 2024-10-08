@@ -1,14 +1,21 @@
+import asyncio # Locking write access.
+import datetime as dt # Getting the date.
+import json # De-/Serializing.
+import os # Checking whether a file exists.
+import statistics as stats # Computing median etc.
+
 import discord
 from discord.ext import commands
-import datetime as dt
-import statistics as stats
-import json
-import os
+
+# Path to file storing bot token.
+CONFIG_FILE = "sleeptober-bot_config.json"
+# Configuration will be loaded at startup.
+CONFIG = {}
 
 # Path to file storing sleep data.
 DATA_FILE = "sleeptober-bot_data.json"
-# Path to file storing bot token.
-CONFIG_FILE = "sleeptober-bot_config.json"
+# Writer lock for data file.
+DATA_FILE_LOCK = asyncio.Lock()
 
 COMMAND_PREFIX = ">>="
 
@@ -39,11 +46,22 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-bot = commands.Bot(command_prefix=COMMAND_PREFIX, description=DESCRIPTION, intents=intents)
+bot = commands.Bot(
+    command_prefix=COMMAND_PREFIX,
+    description=DESCRIPTION,
+    intents=intents
+)
 
-@bot.event
-async def on_ready():
-    print(f'Logged in as {bot.user} (ID: {bot.user.id})')
+def fmt_hours_f(hours):
+    """Format 6.50069 hours as "6.50"."""
+    return f"{hours:2.2f}"
+
+def fmt_hours(hours):
+    """Format 6.50069 hours as "6:30"."""
+    minutes = round(hours * 60)
+    hh = minutes // 60
+    mm = minutes % 60
+    return f"{hh}:{mm:02}"
 
 def store_data(data):
     """Filesystem store global sleep data."""
@@ -99,6 +117,22 @@ def compute_stats(user_data):
         hours_too_many,
         abstract_score,
     )
+    # return (
+    #     logged_total,
+    #     (
+    #         hours_total,
+    #         hours_average,
+    #         hours_median,
+    #         hours_variance,
+    #     ),
+    #     (
+    #         hours_error_mean,
+    #         hours_error_median,
+    #         hours_too_few,
+    #         hours_too_many,
+    #     ),
+    #     abstract_score,
+    # )
     """
     # Notes about Abstract Score
     ## Criteria for scoring
@@ -140,62 +174,58 @@ def compute_stats(user_data):
 def compute_global_leaderboard(data):
     """Generate a a ranked, global leaderboard list."""
     global_leaderboard = sorted(
-        ((user_id, compute_stats(user_data))
-            for (user_id, user_data) in data.items()),
+        ((user_id_str, compute_stats(user_data))
+            for (user_id_str, user_data) in data.items()),
         key=lambda tup: tup[1][-1], # Get abstract_score
         reverse=True # Sort descendingly
     )
     return global_leaderboard
 
-def fmt_hours(hours):
-    minutes = round(hours * 60)
-    hh = minutes // 60
-    mm = minutes % 60
-    return f"{hh}:{mm:02}"
-
-def fmt_hours_f(hours):
-    return f"{hours:2.2f}"
+@bot.event
+async def on_ready():
+    print(f"[ Logged in as {bot.user} (ID={bot.user.id}) ]")
 
 @bot.command(aliases=["sleep","s",":3"])
 async def slept(
         ctx,
         hours_slept: None | str = commands.parameter(description="hours slept, given as a float in the range [0.0, 24.0] or in common `HH:MM` format"),
-        night: None | str = commands.parameter(default=None, description="night to manually set, in the range [1, <yesterday>], defaults to last night"),
+        night: None | str = commands.parameter(description="night to manually set, in the range [1, <yesterday>], defaults to last night"),
     ):
-    print(f"Hi {hours_slept=} {night=}")
+    print(f"[ Logging {hours_slept=} {night=} ]")
     """Saves how many hours you slept last night."""
     # Compute who is being logged.
     if ctx.message.author.bot:
         await ctx.message.add_reaction('🤖')
         await ctx.message.reply("(Bots cannot participate in Sleeptober (yet))", delete_after=60)
         return
-    else:
-        user_id = str(ctx.message.author.id)
+    user_id = ctx.message.author.id
 
     # Compute how many hours of sleep are being logged.
     if hours_slept is None:
-        await ctx.message.reply("Basic usage:\n- \"I slept a healthy 8.5h last night <:bedge:1176108745865044011>\" -> `>>=slept 8.5`\n- \"Oof! I forgot to log 7h 56min on the night 4th->5th\" -> `>>=slept 7:56 4`")
+        await ctx.message.reply(f"""Basic usage:
+- \"I slept a healthy 8.5h last night <:bedge:1176108745865044011>\" -> `{COMMAND_PREFIX}slept 8.5`
+- \"Oof! I forgot to log 7h 56min on the night 4th->5th\" -> `{COMMAND_PREFIX}slept 7:56 4`""")
         return
-    else:
-        # Try parsing as float.
+
+    # Try parsing as float.
+    try:
+        hours = float(hours_slept)
+        if not 0 <= hours <= 24:
+            await ctx.message.add_reaction('🙅')
+            await ctx.message.reply("(Turns out you can only sleep between [0.0, 24.0]h a day)", delete_after=60)
+            return
+    except:
+        # Try parsing as `HH:MM`.
         try:
-            hours = float(hours_slept)
-            if not 0 <= hours <= 24:
-                await ctx.message.add_reaction('🙅')
-                await ctx.message.reply("(Turns out you can only sleep between [0.0, 24.0]h a day)", delete_after=60)
-                return
+            [hh,mm] = hours_slept.split(':')
+            [hh,mm] = [int(hh), int(mm)]
+            if not (0 <= hh < 24 and 0 <= mm < 60 or hh == 24 and mm == 0):
+                raise ValueError
+            hours = hh + mm / 60
         except:
-            # Try parsing as `HH:MM`.
-            try:
-                [hh,mm] = hours_slept.split(':')
-                (hh,mm) = (int(hh),int(mm))
-                if not (0 <= hh < 24 and 0 <= mm < 60 or hh == 24 and mm == 0):
-                    raise ValueError
-                hours = hh + mm / 60
-            except:
-                await ctx.message.add_reaction('🙅')
-                await ctx.message.reply(f"(That's not a valid time in `HH:MM` or floating point format)", delete_after=60)
-                return
+            await ctx.message.add_reaction('🙅')
+            await ctx.message.reply(f"(That's not a valid time in `HH:MM` or floating point format)", delete_after=60)
+            return
 
     # Compute which day is being logged.
     current_date_index = get_sleeptober_index()
@@ -214,25 +244,28 @@ async def slept(
         # No day provided by user, default to setting last night's sleep.
         if current_date_index is None:
             await ctx.message.add_reaction('📆')
-            await ctx.message.reply("(Last night wasn't part of Sleeptober - check in next year!)", delete_after=60)
+            await ctx.message.reply("(Last night wasn't part of Sleeptober - check again next year!)", delete_after=60)
             return
         date_index = current_date_index
 
     # Do the logging.
-    # FIXME: There's a data race here where two users can ≈simultaneously write and only one of their infos is stored :wokege:
-    data = load_data()
-    data.setdefault(user_id, [None for _ in range(31)])[date_index] = hours
-    store_data(data)
+    async with DATA_FILE_LOCK:
+        data = load_data()
+        data.setdefault(str(user_id), [None for _ in range(31)])[date_index] = hours
+        store_data(data)
 
     # Reaction for visual feedback on success.
     if hours == 0.0:
         await ctx.message.add_reaction('💀')
+    elif hours < 2.0:
+        await ctx.message.add_reaction("<:despairge:1212140064025485322>")
     elif hours < 6.0:
         await ctx.message.add_reaction("<:wokege:1176108188685324319>")
     else:
         await ctx.message.add_reaction("<:bedge:1176108745865044011>")
 
-@bot.command(aliases=["p"])
+
+@bot.group(aliases=["p"], invoke_without_command=True)
 async def profile(ctx):
     """Shows how many hours you slept on each day of Sleeptober."""
     async with ctx.typing():
@@ -240,23 +273,25 @@ async def profile(ctx):
             title="Personal Sleeptober Profile",
             description="",
         )
+
         # Load user data.
         if ctx.message.author.bot:
             await ctx.message.add_reaction("🤖")
             return
-        else:
-            user_id = str(ctx.message.author.id)
+        user_id = ctx.message.author.id
         data = load_data()
-        user_data = data.get(user_id)
+        user_data = data.get(str(user_id))
+
         # Generate profile.
         if user_data is None:
-            embed.description += "...you haven't slept yet <:wokege:1176108188685324319>\n\nParticipate with `>>=slept`"
+            embed.description += f"...you haven't slept yet <:wokege:1176108188685324319>\n\nParticipate with `{COMMAND_PREFIX}slept`"
         else:
             # Truncate data.
-            current_day_index = get_sleeptober_index()
-            if current_day_index is None:
-                current_day_index = 30 # FIXME What if the users queries this *before* October?
-            user_data = user_data[:current_day_index+1]
+            current_date_index = get_sleeptober_index()
+            if current_date_index is None:
+                current_date_index = 30 # FIXME What if the users queries this *before* October?
+            user_data = user_data[:current_date_index+1]
+
             # Add ASCII graph.
             (maxwidth_day_index, maxwidth_hours) = (len(str(len(user_data))), 5)
             embed.description += "```c\n"
@@ -280,9 +315,10 @@ async def profile(ctx):
                         chars[i] = "▎▌▊"[quarter_hours-1] # " ▏▎▍▌▋▊▉█"
                         quarter_hours = 0
                     i += 1
-                embed.description += f"{day_index+1: >{maxwidth_day_index}}. {f'{fmt_hours(hours)}' if hours is not None else '?': >{maxwidth_hours}} {''.join(chars)}\n"
+                embed.description += f"{day_index+1: >{maxwidth_day_index}}. {fmt_hours(hours) if hours is not None else '?': >{maxwidth_hours}} {''.join(chars)}\n"
             #embed.description += f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}}  ┕{7*'┷'}┷┷{14*'┷'}┙\n"
             embed.description += "```\n"
+
             # Add value summary.
             (
                 logged_total,
@@ -299,7 +335,36 @@ async def profile(ctx):
 * Cumulative above 9h sleep: `+{fmt_hours(hours_too_many)}` h.
 General statistics for sleep per night:
 * Average `{fmt_hours(hours_mean)}` h, median `{fmt_hours(hours_median)}` h, deviation `{fmt_hours(hours_variance**.5)}` h."""
+
         await ctx.message.reply(embed=embed)
+
+@profile.command()
+async def reset(
+        ctx,
+        confirm_code: str | None = commands.parameter(description="")
+    ):
+    """Used to reset (delete) one's data."""
+    # Load user data.
+    if ctx.message.author.bot:
+        await ctx.message.add_reaction("🤖")
+        return
+    user_id = ctx.message.author.id
+    idx = (user_id >> 22) % 26
+    confirm_code_expected = "abcdefghijklmnopqrstuvwxyzab"[idx:idx+3]
+
+    # Ask user for confirmation or delete directly.
+    if confirm_code is None:
+        await ctx.message.reply(f"Are you sure you want to delete your data? It will be lost forever! (A long time!) - type `{COMMAND_PREFIX}profile reset {confirm_code_expected}`", delete_after=60)
+    elif confirm_code == confirm_code_expected:
+        # Do the deleting.
+        async with DATA_FILE_LOCK:
+            data = load_data()
+            data.pop(str(user_id), None)
+            store_data(data)
+        await ctx.message.add_reaction('✅')
+        await ctx.message.reply("(Your data has been reset)", delete_after=60)
+    else:
+        await ctx.message.add_reaction('❌')
 
 @bot.command(aliases=["lb"])
 async def leaderboard(ctx):
@@ -330,7 +395,7 @@ async def leaderboard(ctx):
 - minimizing the sum of hours above 9h each night."""
 
         # Make tags load correctly(??) (code inspired by /jackra1n/substiify-v2).
-        mentions_msg = await ctx.send("loading ...")
+        mentions_msg = await ctx.send("(loading ...)")
         mentions_str = ''.join(f"<@{user_id}>" for (user_id, _) in global_leaderboard_32)
         await mentions_msg.edit(content=mentions_str)
         await mentions_msg.delete()
@@ -344,9 +409,8 @@ async def shutdown(ctx):
     if ctx.message.author.bot:
         await ctx.message.add_reaction('🤖')
         return
-    else:
-        user_id = str(ctx.message.author.id)
-    if user_id not in CONFIG['admin_ids']:
+    user_id = ctx.message.author.id
+    if str(user_id) not in CONFIG['admin_ids']:
         await ctx.message.add_reaction('❌')
         return
     else:
