@@ -63,6 +63,21 @@ def fmt_hours(hours):
     mm = minutes % 60
     return f"{hh}:{mm:02}"
 
+def fmt_leaderboard(leaderboard_entries, rank_offset):
+    return '\n'.join(
+        f"{1+rank_offset+i}. `{f'-{fmt_hours_f(hours_too_few)}': >6} {f'+{fmt_hours_f(hours_too_many)}': >6}` ~ {fmt_hours(hours_median)} h. <@{user_id}> ({logged_total}d)"
+        for i, (user_id,(
+            logged_total,
+            hours_total,
+            hours_mean,
+            hours_median,
+            hours_variance,
+            hours_too_few,
+            hours_too_many,
+            abstract_score,
+        )) in enumerate(leaderboard_entries)
+    )
+
 def store_data(data):
     """Filesystem store global sleep data."""
     with open(DATA_FILE, 'w') as file:
@@ -117,22 +132,6 @@ def compute_stats(user_data):
         hours_too_many,
         abstract_score,
     )
-    # return (
-    #     logged_total,
-    #     (
-    #         hours_total,
-    #         hours_average,
-    #         hours_median,
-    #         hours_variance,
-    #     ),
-    #     (
-    #         hours_error_mean,
-    #         hours_error_median,
-    #         hours_too_few,
-    #         hours_too_many,
-    #     ),
-    #     abstract_score,
-    # )
     """
     # Notes about Abstract Score
     ## Criteria for scoring
@@ -188,11 +187,11 @@ async def on_ready():
 @bot.command(aliases=["sleep","s",":3"])
 async def slept(
         ctx,
-        hours_slept: None | str = commands.parameter(description="hours slept, given as a float in the range [0.0, 24.0] or in common `HH:MM` format"),
-        night: None | str = commands.parameter(description="night to manually set, in the range [1, <yesterday>], defaults to last night"),
+        hours_slept: None | str = commands.parameter(description="Hours slept, given as a float in the range [0.0, 24.0] or in common `HH:MM` format."),
+        night: None | str = commands.parameter(description="Night to manually write, in the range [1, <yesterday>], defaults to last night."),
     ):
-    print(f"[ Logging {hours_slept=} {night=} ]")
     """Saves how many hours you slept last night."""
+    print(f"[ s {hours_slept=} {night=} @ {dt.datetime.now().strftime('%Y.%m.%d-%Hh%Mm%S')} ]")
     # Compute who is being logged.
     if ctx.message.author.bot:
         await ctx.message.add_reaction('🤖')
@@ -269,11 +268,6 @@ async def slept(
 async def profile(ctx):
     """Shows how many hours you slept on each day of Sleeptober."""
     async with ctx.typing():
-        embed = discord.Embed(
-            title="Personal Sleeptober Profile",
-            description="",
-        )
-
         # Load user data.
         if ctx.message.author.bot:
             await ctx.message.add_reaction("🤖")
@@ -284,7 +278,7 @@ async def profile(ctx):
 
         # Generate profile.
         if user_data is None:
-            embed.description += f"...you haven't slept yet <:wokege:1176108188685324319>\n\nParticipate with `{COMMAND_PREFIX}slept`"
+            text = f"...you haven't slept yet <:wokege:1176108188685324319>\n\nParticipate with `{COMMAND_PREFIX}slept`"
         else:
             # Truncate data.
             current_date_index = get_sleeptober_index()
@@ -294,8 +288,8 @@ async def profile(ctx):
 
             # Add ASCII graph.
             (maxwidth_day_index, maxwidth_hours) = (len(str(len(user_data))), 5)
-            embed.description += "```c\n"
-            embed.description +=  f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}} ┍{7*'┯'}┳┳{14*'┯'}┑\n"
+            text = "```c\n"
+            text +=  f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}} ┍{7*'┯'}┳┳{14*'┯'}┑\n"
             for day_index, hours in enumerate(user_data):
                 quarter_hours = round(hours * 4) if hours is not None else 0
                 chars = ['│'] + 7*[' '] + 2*['┆'] + 14*[' '] + ['│']
@@ -315,9 +309,9 @@ async def profile(ctx):
                         chars[i] = "▎▌▊"[quarter_hours-1] # " ▏▎▍▌▋▊▉█"
                         quarter_hours = 0
                     i += 1
-                embed.description += f"{day_index+1: >{maxwidth_day_index}}. {fmt_hours(hours) if hours is not None else '?': >{maxwidth_hours}} {''.join(chars)}\n"
-            #embed.description += f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}}  ┕{7*'┷'}┷┷{14*'┷'}┙\n"
-            embed.description += "```\n"
+                text += f"{day_index+1: >{maxwidth_day_index}}. {fmt_hours(hours) if hours is not None else '?': >{maxwidth_hours}} {''.join(chars)}\n"
+            #text += f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}}  ┕{7*'┷'}┷┷{14*'┷'}┙\n"
+            text += "```\n"
 
             # Add value summary.
             (
@@ -330,18 +324,23 @@ async def profile(ctx):
                 hours_too_many,
                 abstract_score,
             ) = compute_stats(user_data)
-            embed.description += f"""{logged_total} days logged:
+            text += f"""{logged_total} days logged:
 * Cumulative short of 8h sleep: `-{fmt_hours(hours_too_few)}` h.
 * Cumulative above 9h sleep: `+{fmt_hours(hours_too_many)}` h.
 General statistics for sleep per night:
 * Average `{fmt_hours(hours_mean)}` h, median `{fmt_hours(hours_median)}` h, deviation `{fmt_hours(hours_variance**.5)}` h."""
 
+        # Assemble and send embed.
+        embed = discord.Embed(
+            title="Personal Sleeptober Profile",
+            description=text,
+        )
         await ctx.message.reply(embed=embed)
 
 @profile.command()
 async def reset(
         ctx,
-        confirm_code: str | None = commands.parameter(description="")
+        confirm_code: str | None = commands.parameter(description=""),
     ):
     """Used to reset (delete) one's data."""
     # Load user data.
@@ -349,8 +348,8 @@ async def reset(
         await ctx.message.add_reaction("🤖")
         return
     user_id = ctx.message.author.id
-    idx = (user_id >> 22) % 26
-    confirm_code_expected = "abcdefghijklmnopqrstuvwxyzab"[idx:idx+3]
+    i = (user_id >> 22) % 26
+    confirm_code_expected = "abcdefghijklmnopqrstuvwxyzabc"[i:i+4]
 
     # Ask user for confirmation or delete directly.
     if confirm_code is None:
@@ -367,39 +366,60 @@ async def reset(
         await ctx.message.add_reaction('❌')
 
 @bot.command(aliases=["lb"])
-async def leaderboard(ctx):
+async def leaderboard(
+        ctx,
+        user_id: int | None = commands.parameter(description="User from whose position which to view the leaderboard from."),
+    ):
     """Shows the current (global) Sleeptober leaderboard."""
     async with ctx.typing():
-        embed = discord.Embed(
-            title = "D-INFK Sleeptober 2024 Leaderboard <:bedge:1176108745865044011>",
-            description = "",
-        )
+        # Load user data.
+        if user_id is None:
+            if ctx.message.author.bot:
+                await ctx.message.add_reaction("🤖")
+                return
+            user_id = ctx.message.author.id
         data = load_data()
         if not data:
-            embed.description += "\n...Feelin' empty :("
+            text = "\n...seems like nobody has slept yet(??) (Be the first! `{COMMAND_PREFIX}sleep`)"
         else:
-            global_leaderboard_32 = compute_global_leaderboard(data)[:32]
-            embed.description += '\n'.join(f"{index+1}. `{f'-{fmt_hours_f(hours_too_few)}': >6} {f'+{fmt_hours_f(hours_too_many)}': >6}` ~ {fmt_hours(hours_median)} h. <@{user_id}> ({logged_total}d)" for index, (user_id, (
-                logged_total,
-                hours_total,
-                hours_mean,
-                hours_median,
-                hours_variance,
-                hours_too_few,
-                hours_too_many,
-                abstract_score,
-            )) in enumerate(global_leaderboard_32))
-        embed.description += """\n\nHigher rank on the leaderboard is achieved by:
-- maximizing the number of days you logged,
-- minimizing the sum of hours you were short of sleeping 8h each night,
-- minimizing the sum of hours above 9h each night."""
+            global_leaderboard = compute_global_leaderboard(data)
+            user_index = 0
+            while user_index < len(global_leaderboard) and global_leaderboard[user_index][0] != str(user_id):
+                user_index += 1
+            CAP_TOP_PREVIEW = 10
+            RADIUS_CHUNK_WINDOW = 3
+            if user_index-RADIUS_CHUNK_WINDOW <= CAP_TOP_PREVIEW+1:
+                leaderboard_top = global_leaderboard[:max(CAP_TOP_PREVIEW,user_index+RADIUS_CHUNK_WINDOW+1)]
+                leaderboard_chunk = []
+            else:
+                leaderboard_top = global_leaderboard[:CAP_TOP_PREVIEW]
+                leaderboard_chunk = global_leaderboard[user_index-RADIUS_CHUNK_WINDOW:user_index+RADIUS_CHUNK_WINDOW+1]
+            text = fmt_leaderboard(leaderboard_top, 0)
+            text += "\n. . .\n"
+            if leaderboard_chunk:
+                text += fmt_leaderboard(leaderboard_chunk, user_index-RADIUS_CHUNK_WINDOW)
+                if user_index+RADIUS_CHUNK_WINDOW+1 < len(global_leaderboard):
+                    text += "\n. . .\n"
+        text += """\n-# Higher rank on the leaderboard is achieved by:
+-# - Maximizing the number of days you logged,
+-# - Minimizing the sum of hours you were short of sleeping 8h each night,
+-# - Minimizing the sum of hours above 9h each night."""
 
         # Make tags load correctly(??) (code inspired by /jackra1n/substiify-v2).
+        mentions_str = ''.join(
+            f"<@{user_id}>"
+            for entries in [leaderboard_top,leaderboard_chunk]
+            for (user_id, _) in entries
+        )
         mentions_msg = await ctx.send("(loading ...)")
-        mentions_str = ''.join(f"<@{user_id}>" for (user_id, _) in global_leaderboard_32)
         await mentions_msg.edit(content=mentions_str)
         await mentions_msg.delete()
 
+        # Assemble and send final embed.
+        embed = discord.Embed(
+            title="D-INFK Sleeptober 2024 Leaderboard <:bedge:1176108745865044011>",
+            description=text,
+        )
         await ctx.send(embed=embed)
 
 @bot.command()
