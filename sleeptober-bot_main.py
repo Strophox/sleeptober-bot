@@ -17,6 +17,14 @@ DATA_FILE = "sleeptober-bot_data.json"
 # Writer lock for data file.
 DATA_FILE_LOCK = asyncio.Lock()
 
+# A simple color palette for the bot to use.
+COLORS = {
+    "light": discord.Color.from_str("#C5D0DC"),
+    "high":  discord.Color.from_str("#5BA2CD"),
+    "low":   discord.Color.from_str("#3069B7"),
+    "dark":  discord.Color.from_str("#29313D"),
+}
+
 COMMAND_PREFIX = ">>="
 
 DESCRIPTION = """Sleeptober
@@ -256,7 +264,7 @@ async def slept(
     # Reaction for visual feedback on success.
     if hours == 0.0:
         await ctx.message.add_reaction('💀')
-    elif hours < 2.0:
+    elif hours < 4.0:
         await ctx.message.add_reaction("<:despairge:1212140064025485322>")
     elif hours < 6.0:
         await ctx.message.add_reaction("<:wokege:1176108188685324319>")
@@ -340,6 +348,7 @@ General statistics for sleep per night:
         embed = discord.Embed(
             title="Personal Sleeptober Profile",
             description=text,
+            color=COLORS['high']
         )
         await ctx.message.reply(embed=embed)
 
@@ -441,6 +450,7 @@ async def leaderboard(
         embed = discord.Embed(
             title="D-INFK Sleeptober 2024 Leaderboard <:bedge:1176108745865044011>",
             description=text,
+            color=COLORS['low']
         )
         await ctx.send(embed=embed)
 
