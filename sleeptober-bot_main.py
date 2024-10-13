@@ -71,9 +71,10 @@ def fmt_hours(hours):
     mm = minutes % 60
     return f"{hh}:{mm:02}"
 
-def fmt_leaderboard(leaderboard_entries, rank_offset):
+def fmt_leaderboard(leaderboard_entries, rank_offset, rank_highlighted):
+    bold = "**"
     return '\n'.join(
-        f"{1+rank_offset+i}. `{f'-{fmt_hours_f(hours_too_few)}': >6} {f'+{fmt_hours_f(hours_too_many)}': >6}` ~ {fmt_hours(hours_median)} h. <@{user_id}> ({logged_total}d)"
+        f"{1+rank_offset+i}. {bold if rank_offset+i == rank_highlighted else ''}`{f'-{fmt_hours_f(hours_too_few)}': >6} {f'+{fmt_hours_f(hours_too_many)}': >6}` ~ {fmt_hours(hours_mean)} h. <@{user_id}> ({logged_total}d){bold if rank_offset+i == rank_highlighted else ''}"
         for i, (user_id,(
             logged_total,
             hours_total,
@@ -425,10 +426,10 @@ async def leaderboard(
             else:
                 leaderboard_top = global_leaderboard[:CAP_TOP_PREVIEW]
                 leaderboard_chunk = global_leaderboard[user_index-RADIUS_CHUNK_WINDOW:user_index+RADIUS_CHUNK_WINDOW+1]
-            text = fmt_leaderboard(leaderboard_top, 0)
+            text = fmt_leaderboard(leaderboard_top, 0, user_index)
             text += "\n. . .\n"
             if leaderboard_chunk:
-                text += fmt_leaderboard(leaderboard_chunk, user_index-RADIUS_CHUNK_WINDOW)
+                text += fmt_leaderboard(leaderboard_chunk, user_index-RADIUS_CHUNK_WINDOW, user_index)
                 if user_index+RADIUS_CHUNK_WINDOW+1 < len(global_leaderboard):
                     text += "\n. . .\n"
         text += """\n-# Higher rank on the leaderboard is achieved by:
