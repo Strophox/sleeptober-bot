@@ -4,6 +4,7 @@ import json # De-/Serializing.
 import os # Checking whether a file exists.
 import statistics as stats # Computing median etc.
 import collections
+import random
 
 import discord
 from discord.ext import commands
@@ -84,13 +85,6 @@ def fmt_hours(hours):
     mm = minutes % 60
     return f"{hh}:{mm:02}"
 
-def fmt_leaderboard(leaderboard_entries, rank_offset, rank_highlighted):
-    bold = "**"
-    return '\n'.join(
-        f"{1+rank_offset+i}. {bold if rank_offset+i == rank_highlighted else ''}`{f'-{fmt_hours_f(sleep_stats.deficit)}': >6} {f'+{fmt_hours_f(sleep_stats.surplus)}': >6}` ~ {fmt_hours(sleep_stats.mean)} h. <@{user_id}> ({sleep_stats.days}d){bold if rank_offset+i == rank_highlighted else ''}"
-        for i, (user_id, sleep_stats) in enumerate(leaderboard_entries)
-    )
-
 def store_data(data):
     """Filesystem store global sleep data."""
     with open(DATA_FILE, 'w') as file:
@@ -130,6 +124,7 @@ def compute_stats(user_data):
         elif 9 < h:
             hours_surplus += h - 9
     sleeptober_score = 100 * days_logged - hours_deficit - hours_surplus / 2
+    #experimental_score = FIXME: Come up with better formula.
     return SleepStats(
         days=days_logged,
         min=hours_min,
@@ -140,6 +135,7 @@ def compute_stats(user_data):
         deficit=hours_deficit,
         surplus=hours_surplus,
         score=sleeptober_score,
+        #experimental_score=experimental_score,
     )
     """
     # Notes about Abstract Score
@@ -322,7 +318,7 @@ async def profile(
             sleep_stats = compute_stats(user_data)
             text += f"""Sleep statistics
 * Total hours short of 8h `-{fmt_hours(sleep_stats.deficit)}` h, Total above 9h `+{fmt_hours(sleep_stats.surplus)}` h.
-* {sleep_stats.days} days logged, Average `{fmt_hours(sleep_stats.mean)}` h, median `{fmt_hours(sleep_stats.median)}` h
+* `{sleep_stats.days}` days logged, average `{fmt_hours(sleep_stats.mean)}` h, median `{fmt_hours(sleep_stats.median)}` h.
 * Minimum `{fmt_hours(sleep_stats.min)}` h, maximum `{fmt_hours(sleep_stats.max)}` h, deviation `{fmt_hours(sleep_stats.deviation)}` h."""
 
         # Assemble and send embed.
@@ -378,7 +374,7 @@ async def reset(
 @bot.command(aliases=["lb"])
 async def leaderboard(
         ctx,
-        sort: str | None = commands.parameter(description="Criterium by which to sort."),
+        sort: str | None = commands.parameter(description="Stat by which to sort."),
         #user: discord.User | None = commands.parameter(description="User whose position to view."), TODO: Remove debug.
     ):
     """Shows the current (global) Sleeptober leaderboard."""
@@ -395,64 +391,87 @@ async def leaderboard(
             await ctx.message.add_reaction("🤖")
             return
         user_id = ctx.message.author.id
-        # Load sorting criterium.
+        # Handle stat sorting and formatting mechanism.
         if sort is None:
-            sort_field = "score" # Last column is sleeptober_score.
+            sort_stat = "score" # Last column is sleeptober_score.
             sort_down = True
+            fmt_user_stats = lambda user_id, sleep_stats: f"""`{f'-{fmt_hours_f(sleep_stats.deficit)}': >6}` `{f'+{fmt_hours_f(sleep_stats.surplus)}': >6}` ~ {fmt_hours(sleep_stats.mean)} h. <@{user_id}> ({sleep_stats.days}d)"""
         else:
             if not (sort.startswith("+") or sort.startswith("-")) or sort[1:] not in SleepStats._fields:
                 await ctx.message.reply(f"""Advanced leaderboard usage:
-- *Example:* "sort downwards by (Sleeptober) score" (default) -> `{COMMAND_PREFIX}leaderboard -score`.
-- Sort ascendingly with prefix `+`, descendingly with `-`.
-- Sort by any of the following criteria relating to hours of sleep: {", ".join(f"`{field}`" for field in SleepStats._fields)}.""")
+- "Sort downwards by 'Sleeptober' score" (default) -> `{COMMAND_PREFIX}lb -score`.
+- *Sort orders:* `-` for descending, `+` for ascending.
+- *Sort criteria:* {", ".join(f"`{field}`" for field in SleepStats._fields)}.""")
                 return
-            sort_field = sort[1:]
+            sort_stat = sort[1:]
             sort_down = sort[0] == "-"
+            if sort_stat in {"days","mean","deficit","surplus"}:
+                fmt_user_stats = lambda user_id, sleep_stats: f"""`{f'-{fmt_hours_f(sleep_stats.deficit)}': >6}` `{f'+{fmt_hours_f(sleep_stats.surplus)}': >6}` ~ {fmt_hours(sleep_stats.mean)} h. <@{user_id}> ({sleep_stats.days}d)"""
+            else:
+                fmt_stats = {
+                    # "days": lambda ss: f"{ss.days}d",
+                    "min": lambda ss: f"min. {fmt_hours(ss.min)} h.",
+                    "max": lambda ss: f"max. {fmt_hours(ss.max)} h.",
+                    # "mean": lambda ss: f"avg. {fmt_hours(ss.mean)} h.",
+                    "median": lambda ss: f"mdn. {fmt_hours(ss.median)} h.",
+                    "deviation": lambda ss: f"dev. {fmt_hours(ss.deviation)} h.",
+                    # "deficit": lambda ss: f"`{f'-{fmt_hours_f(ss.deficit)}': >6}`",
+                    # "surplus": lambda ss: f"`{f'+{fmt_hours_f(ss.surplus)}': >6}`",
+                    "score": lambda ss: f"`{ss.score:.03f}`✰",
+                }.get(sort_stat, lambda ss: f"`{getattr(ss, sort_stat)}`(?)") # Fallback formatter.
+                fmt_user_stats = lambda user_id, sleep_stats: f"""{fmt_stats(sleep_stats)} <@{user_id}> ({sleep_stats.days}d)"""
 
         data = load_data()
         if not data:
             text = "\n...seems like nobody has slept yet(??) (Be the first! `{COMMAND_PREFIX}sleep`)"
         else:
-            # Load global leaderboard data, sorted.
+            # Load global leaderboard data, sorted as determined above.
             global_leaderboard = sorted(
                 (
                     (user_id_str, compute_stats(user_data))
                     for (user_id_str, user_data) in data.items()
                 ),
-                key=lambda t_id_stats: getattr(t_id_stats[1], sort_field), # Get sleeptober_score
-                reverse=sort_down # Sort descendingly
+                key=lambda t_id_stats: getattr(t_id_stats[1], sort_stat),
+                reverse=sort_down
             )
             # Find user position on leaderboard.
             user_index = 0
             while user_index < len(global_leaderboard) and global_leaderboard[user_index][0] != str(user_id):
                 user_index += 1
             # Format leaderboard preview.
+            fmt_leaderboard_entries = lambda entries, rank_offset: '\n'.join(
+                    f"""{1+rank_offset+i}. {"**" if rank_offset+i == user_index else ""}{fmt_user_stats(user_id, sleep_stats)}{"**" if rank_offset+i == user_index else ""}"""
+                    for i, (user_id, sleep_stats) in enumerate(entries)
+                )
             CAP_TOP_PREVIEW = 10
-            RADIUS_CHUNK_WINDOW = 3
+            RADIUS_CHUNK_WINDOW = 2
             if user_index-RADIUS_CHUNK_WINDOW <= CAP_TOP_PREVIEW+1:
                 leaderboard_top = global_leaderboard[:max(CAP_TOP_PREVIEW,user_index+RADIUS_CHUNK_WINDOW+1)]
                 leaderboard_chunk = []
             else:
                 leaderboard_top = global_leaderboard[:CAP_TOP_PREVIEW]
                 leaderboard_chunk = global_leaderboard[user_index-RADIUS_CHUNK_WINDOW:user_index+RADIUS_CHUNK_WINDOW+1]
-            text = fmt_leaderboard(leaderboard_top, 0, user_index)
-            text += "\n. . .\n"
+            text = f"{fmt_leaderboard_entries(leaderboard_top, 0)}\n"
+            text += "⋅ ⋅ ⋅\n"
             if leaderboard_chunk:
-                text += fmt_leaderboard(leaderboard_chunk, user_index-RADIUS_CHUNK_WINDOW, user_index)
+                text += f"{fmt_leaderboard_entries(leaderboard_chunk, user_index-RADIUS_CHUNK_WINDOW)}\n"
                 if user_index+RADIUS_CHUNK_WINDOW+1 < len(global_leaderboard):
-                    text += "\n. . .\n"
-        text += """\n-# Higher rank on the leaderboard is achieved by:
+                    text += "⋅ ⋅ ⋅\n"
+        if sort is not None:
+            text += f"""-# Sorted in {"descending" if sort_down else "ascending"} order by `{sort_stat}`."""
+        else:
+            text += """-# Higher rank on the leaderboard is achieved by:
 -# - Maximizing the number of days you logged,
 -# - Minimizing the sum of hours you were short of sleeping 8h each night,
 -# - Minimizing the sum of hours above 9h each night."""
 
-        # Make tags load correctly(??) (code inspired by /jackra1n/substiify-v2).
+        # Make mentions load correctly(??) (code inspired by /jackra1n/substiify-v2).
         mentions_str = ''.join(
             f"<@{user_id}>"
             for entries in [leaderboard_top,leaderboard_chunk]
             for (user_id, _) in entries
         )
-        mentions_msg = await ctx.send("(loading ...)")
+        mentions_msg = await ctx.send(f"({random.choice("🌙🌓🌛🌕🌝🌗🌜🌑🌚🌘🌖🌒🌔")} loading names...)")
         await mentions_msg.edit(content=mentions_str)
         await mentions_msg.delete()
 
