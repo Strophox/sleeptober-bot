@@ -3,6 +3,7 @@ import datetime as dt # Getting the date.
 import json # De-/Serializing.
 import os # Checking whether a file exists.
 import statistics as stats # Computing median etc.
+import collections
 
 import discord
 from discord.ext import commands
@@ -60,6 +61,18 @@ bot = commands.Bot(
     intents=intents,
 )
 
+SleepStats = collections.namedtuple("SleepStats", [
+    "days",
+    "min",
+    "max",
+    "mean",
+    "median",
+    "deviation",
+    "deficit",
+    "surplus",
+    "score",
+])
+
 def fmt_hours_f(hours):
     """Format 6.50069 hours as "6.50"."""
     return f"{hours:2.2f}"
@@ -74,17 +87,8 @@ def fmt_hours(hours):
 def fmt_leaderboard(leaderboard_entries, rank_offset, rank_highlighted):
     bold = "**"
     return '\n'.join(
-        f"{1+rank_offset+i}. {bold if rank_offset+i == rank_highlighted else ''}`{f'-{fmt_hours_f(hours_too_few)}': >6} {f'+{fmt_hours_f(hours_too_many)}': >6}` ~ {fmt_hours(hours_mean)} h. <@{user_id}> ({logged_total}d){bold if rank_offset+i == rank_highlighted else ''}"
-        for i, (user_id,(
-            logged_total,
-            hours_total,
-            hours_mean,
-            hours_median,
-            hours_variance,
-            hours_too_few,
-            hours_too_many,
-            sleeptober_score,
-        )) in enumerate(leaderboard_entries)
+        f"{1+rank_offset+i}. {bold if rank_offset+i == rank_highlighted else ''}`{f'-{fmt_hours_f(sleep_stats.deficit)}': >6} {f'+{fmt_hours_f(sleep_stats.surplus)}': >6}` ~ {fmt_hours(sleep_stats.mean)} h. <@{user_id}> ({sleep_stats.days}d){bold if rank_offset+i == rank_highlighted else ''}"
+        for i, (user_id, sleep_stats) in enumerate(leaderboard_entries)
     )
 
 def store_data(data):
@@ -106,50 +110,36 @@ def get_sleeptober_index():
     else:
         return None
 
-def compute_global_leaderboard(data):
-    """Generate a a ranked, global leaderboard list."""
-    global_leaderboard = sorted(
-        ((user_id_str, compute_stats(user_data))
-            for (user_id_str, user_data) in data.items()),
-        key=lambda tup: tup[1][-1], # Get sleeptober_score
-        reverse=True # Sort descendingly
-    )
-    return global_leaderboard
-
 def compute_stats(user_data):
-    """
-    Compute some relevant stats from user's raw hours-slept-each-night data:
-    - logged_total: Total number of days logged.
-    - hours_total: Total number of hours slept.
-    - hours_too_few: Total number of hours slept too little each night.
-    - hours_too_many: Total number of hours slept too much each night.
-    - sleeptober_score: Abstract score (higher is better)
-    """
+    """Compute some relevant stats from user's raw hours-slept-each-night data with at least one data point."""
     hours = [h for h in user_data if h is not None]
-    logged_total = len(hours)
-    hours_total = sum(hours)
+    days_logged = len(hours)
+    hours_min = min(hours)
+    hours_max = max(hours)
 
     hours_mean = stats.mean(hours)
     hours_median = stats.median(hours)
-    hours_variance = sum(h**2 for h in hours)/(len(hours) or 1) - hours_mean**2
+    hours_variance = sum(h**2 for h in hours)/days_logged - hours_mean**2
+    hours_deviation = hours_variance**.5
 
-    hours_too_few = 0
-    hours_too_many = 0
+    hours_deficit = 0
+    hours_surplus = 0
     for h in hours:
         if h < 8:
-            hours_too_few += 8 - h
+            hours_deficit += 8 - h
         elif 9 < h:
-            hours_too_many += h - 9
-    sleeptober_score = 100 * logged_total - hours_too_few - hours_too_many / 2
-    return (
-        logged_total,
-        hours_total,
-        hours_mean,
-        hours_median,
-        hours_variance,
-        hours_too_few,
-        hours_too_many,
-        sleeptober_score,
+            hours_surplus += h - 9
+    sleeptober_score = 100 * days_logged - hours_deficit - hours_surplus / 2
+    return SleepStats(
+        days=days_logged,
+        min=hours_min,
+        max=hours_max,
+        mean=hours_mean,
+        median=hours_median,
+        deviation=hours_deviation,
+        deficit=hours_deficit,
+        surplus=hours_surplus,
+        score=sleeptober_score,
     )
     """
     # Notes about Abstract Score
@@ -329,21 +319,11 @@ async def profile(
             text += "```\n"
 
             # Add value summary.
-            (
-                logged_total,
-                hours_total,
-                hours_mean,
-                hours_median,
-                hours_variance,
-                hours_too_few,
-                hours_too_many,
-                sleeptober_score,
-            ) = compute_stats(user_data)
-            text += f"""{logged_total} days logged:
-* Cumulative short of 8h sleep: `-{fmt_hours(hours_too_few)}` h.
-* Cumulative above 9h sleep: `+{fmt_hours(hours_too_many)}` h.
-General statistics for sleep per night:
-* Average `{fmt_hours(hours_mean)}` h, median `{fmt_hours(hours_median)}` h, deviation `{fmt_hours(hours_variance**.5)}` h."""
+            sleep_stats = compute_stats(user_data)
+            text += f"""Sleep statistics
+* Total hours short of 8h `-{fmt_hours(sleep_stats.deficit)}` h, Total above 9h `+{fmt_hours(sleep_stats.surplus)}` h.
+* {sleep_stats.days} days logged, Average `{fmt_hours(sleep_stats.mean)}` h, median `{fmt_hours(sleep_stats.median)}` h
+* Minimum `{fmt_hours(sleep_stats.min)}` h, maximum `{fmt_hours(sleep_stats.max)}` h, deviation `{fmt_hours(sleep_stats.deviation)}` h."""
 
         # Assemble and send embed.
         embed = discord.Embed(
@@ -398,26 +378,55 @@ async def reset(
 @bot.command(aliases=["lb"])
 async def leaderboard(
         ctx,
-        user: discord.User | None = commands.parameter(description="User from whose position to view."),
+        sort: str | None = commands.parameter(description="Criterium by which to sort."),
+        #user: discord.User | None = commands.parameter(description="User whose position to view."), TODO: Remove debug.
     ):
     """Shows the current (global) Sleeptober leaderboard."""
     async with ctx.typing():
         # Load user data.
-        if user is not None:
-            user_id = user.id
+        #if user is not None: TODO: Remove debug.
+        #    user_id = user.id
+        #else:
+        #    if ctx.message.author.bot:
+        #        await ctx.message.add_reaction("🤖")
+        #        return
+        #    user_id = ctx.message.author.id
+        if ctx.message.author.bot:
+            await ctx.message.add_reaction("🤖")
+            return
+        user_id = ctx.message.author.id
+        # Load sorting criterium.
+        if sort is None:
+            sort_field = "score" # Last column is sleeptober_score.
+            sort_down = True
         else:
-            if ctx.message.author.bot:
-                await ctx.message.add_reaction("🤖")
+            if not (sort.startswith("+") or sort.startswith("-")) or sort[1:] not in SleepStats._fields:
+                await ctx.message.reply(f"""Advanced leaderboard usage:
+- *Example:* "sort downwards by (Sleeptober) score" (default) -> `{COMMAND_PREFIX}leaderboard -score`.
+- Sort ascendingly with prefix `+`, descendingly with `-`.
+- Sort by any of the following criteria relating to hours of sleep: {", ".join(f"`{field}`" for field in SleepStats._fields)}.""")
                 return
-            user_id = ctx.message.author.id
+            sort_field = sort[1:]
+            sort_down = sort[0] == "-"
+
         data = load_data()
         if not data:
             text = "\n...seems like nobody has slept yet(??) (Be the first! `{COMMAND_PREFIX}sleep`)"
         else:
-            global_leaderboard = compute_global_leaderboard(data)
+            # Load global leaderboard data, sorted.
+            global_leaderboard = sorted(
+                (
+                    (user_id_str, compute_stats(user_data))
+                    for (user_id_str, user_data) in data.items()
+                ),
+                key=lambda t_id_stats: getattr(t_id_stats[1], sort_field), # Get sleeptober_score
+                reverse=sort_down # Sort descendingly
+            )
+            # Find user position on leaderboard.
             user_index = 0
             while user_index < len(global_leaderboard) and global_leaderboard[user_index][0] != str(user_id):
                 user_index += 1
+            # Format leaderboard preview.
             CAP_TOP_PREVIEW = 10
             RADIUS_CHUNK_WINDOW = 3
             if user_index-RADIUS_CHUNK_WINDOW <= CAP_TOP_PREVIEW+1:
