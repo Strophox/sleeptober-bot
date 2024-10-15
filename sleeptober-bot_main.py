@@ -133,19 +133,26 @@ def compute_sleep_stats(user_data):
             hours_deficit += LOWER - h
         elif UPPER < h:
             hours_surplus += h - UPPER
+    # Compute legacy Sleeptober score,
+    legacy_score = 1000 * days_logged - hours_deficit - hours_surplus / 2
+    # Compute Sleeptober score,
+    DEFICIT_PUNISH = 1
+    # This choice of factor guarantees that sleeping 0h (deficit) and 24h (surplus) is punished equally
+    SURPLUS_PUNISH = LOWER / (24 - UPPER)
+    # We assume the worst sleep within 2 standard deviations (cover '95%').
+    UNLOGGED_PUNISH = 2 * hours_deviation
     hours_deficit_copy = hours_deficit
     hours_surplus_copy = hours_surplus
-    # Compute legacy Sleeptober score,
-    legacy_score = 1000 * days_logged - hours_deficit_copy - hours_surplus_copy / 2
-    # Compute Sleeptober score,
-    placeholder_night = hours_mean - 3 * hours_deviation
-    if placeholder_night < LOWER:
-        hours_deficit_copy += days_unlogged*(LOWER - placeholder_night)
-    elif UPPER < placeholder_night:
-        hours_surplus_copy += days_unlogged*(placeholder_night - UPPER)
-    sleeptober_score = 1000 - hours_deficit_copy - hours_surplus_copy / 2
+    # Maximize loss depending on whether score is worse on lower or upper bound within the range created by UNLOGGED_PUNISH standard deviation range around user's sleep mean.
+    if hours_mean < LOWER + (UPPER - LOWER) * DEFICIT_PUNISH / (DEFICIT_PUNISH + SURPLUS_PUNISH):
+        hours_deficit_copy += days_unlogged * UNLOGGED_PUNISH
+    else:
+        hours_surplus_copy += days_unlogged * UNLOGGED_PUNISH
+    # This guarantees the score is always nonnegative, and exactly zero if the user sleeps 0h or 24h (maximal loss) each night.
+    SCORE_OFFSET = 31 * LOWER * DEFICIT_PUNISH
+    sleeptober_score = SCORE_OFFSET - hours_deficit_copy * DEFICIT_PUNISH - hours_surplus_copy * SURPLUS_PUNISH
     if days_unlogged > days_logged:
-        sleeptober_score -= 500
+        sleeptober_score /= 2
     return SleepStats(
         days=days_logged,
         min=hours_min,
@@ -412,10 +419,11 @@ async def leaderboard(
             return
         target_user_id = ctx.message.author.id
         # Handle stat sorting and formatting mechanism.
+        # Initialize standard user stats formatter.
+        fmt_user_stats = lambda user_id, sleep_stats: f"""`{f'-{fmt_hours(sleep_stats.deficit)}': >6}` `{f'+{fmt_hours(sleep_stats.surplus)}': >6}` ~ {fmt_hours(sleep_stats.mean)} h. <@{user_id}> ({sleep_stats.days}d)"""
         if sort is None:
             sort_stat = "score" # Last column is sleeptober_score.
             sort_down = True
-            fmt_user_stats = lambda user_id, sleep_stats: f"""`{f'-{fmt_hours_f(sleep_stats.deficit)}': >6}` `{f'+{fmt_hours_f(sleep_stats.surplus)}': >6}` ~ {fmt_hours(sleep_stats.mean)} h. <@{user_id}> ({sleep_stats.days}d)"""
         else:
             if not (sort.startswith("+") or sort.startswith("-")) or sort[1:] not in SleepStats._fields:
                 await ctx.message.reply(f"""Advanced leaderboard usage:
@@ -425,9 +433,7 @@ async def leaderboard(
                 return
             sort_stat = sort[1:]
             sort_down = sort[0] == "-"
-            if sort_stat in {"days","mean","deficit","surplus"}:
-                fmt_user_stats = lambda user_id, sleep_stats: f"""`{f'-{fmt_hours_f(sleep_stats.deficit)}': >6}` `{f'+{fmt_hours_f(sleep_stats.surplus)}': >6}` ~ {fmt_hours(sleep_stats.mean)} h. <@{user_id}> ({sleep_stats.days}d)"""
-            else:
+            if sort_stat not in {"days","mean","deficit","surplus"}:
                 fmt_stats = {
                     # "days": lambda ss: f"{ss.days}d",
                     "min": lambda ss: f"min. {fmt_hours(ss.min)} h.",
@@ -437,7 +443,7 @@ async def leaderboard(
                     "deviation": lambda ss: f"dev. {fmt_hours(ss.deviation)} h.",
                     # "deficit": lambda ss: f"`{f'-{fmt_hours_f(ss.deficit)}': >6}`",
                     # "surplus": lambda ss: f"`{f'+{fmt_hours_f(ss.surplus)}': >6}`",
-                    "score": lambda ss: f"`{ss.score:.03f}`✰",
+                    "score": lambda ss: f"`{ss.score:.02f}`✰",
                 }.get(sort_stat, lambda ss: f"`{getattr(ss, sort_stat)}`(?)") # Fallback formatter.
                 fmt_user_stats = lambda user_id, sleep_stats: f"""{fmt_stats(sleep_stats)} <@{user_id}> ({sleep_stats.days}d)"""
 
@@ -485,10 +491,9 @@ async def leaderboard(
         if sort is not None:
             text += f"""-# Sorted in {"descending" if sort_down else "ascending"} order by `{sort_stat}`."""
         else:
-            text += """-# Higher rank on the leaderboard is achieved by:
--# - Maximizing the number of days you logged,
--# - Minimizing the sum of hours you were short of sleeping 8h each night,
--# - Minimizing the sum of hours above 9h each night."""
+            text += """-# *Shown:* `-deficit` `+surplus` ~ avg. sleep <user> (days logged).
+
+-# Achieve a better overall score by logging more days, minimizing your total sleep deficit (<8h) and surplus (>9h, is punished less)."""
 
         # Make mentions load correctly(??) (code inspired by /jackra1n/substiify-v2).
         mentions_str = ''.join(
