@@ -74,6 +74,7 @@ SleepStats = collections.namedtuple("SleepStats", [
     "surplus",
     "score",
     "legacy_score",
+    "debug",
 ])
 
 def fmt_hours_f(hours):
@@ -164,6 +165,7 @@ def compute_sleep_stats(user_data):
         surplus=hours_surplus,
         score=sleeptober_score,
         legacy_score=legacy_score,
+        debug=f"{hours_deficit_copy:+.2f},{hours_surplus_copy:+.2f}",
     )
     """
     # Notes about Abstract Score
