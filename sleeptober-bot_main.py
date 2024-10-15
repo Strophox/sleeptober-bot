@@ -101,6 +101,7 @@ def store_data(data):
 
 def get_sleeptober_index():
     """Get the index of the currently relevant day (usually yesterday), or None if yesterday was not part of October."""
+    # FIXME: We're manually correct for UTC+2 hour difference.
     yesterday = dt.datetime.now() - dt.timedelta(hours=22)
     if yesterday.month == 10:
         return yesterday.day - 1
@@ -145,7 +146,7 @@ def compute_sleep_stats(user_data):
     hours_deficit_copy = hours_deficit
     hours_surplus_copy = hours_surplus
     # Maximize loss depending on whether score is worse on lower or upper bound within the range created by UNLOGGED_PUNISH standard deviation range around user's sleep mean.
-    if hours_mean < LOWER + (UPPER - LOWER) * DEFICIT_PUNISH / (DEFICIT_PUNISH + SURPLUS_PUNISH):
+    if hours_mean <= LOWER + (UPPER - LOWER) * DEFICIT_PUNISH / (DEFICIT_PUNISH + SURPLUS_PUNISH):
         hours_deficit_copy += days_unlogged * UNLOGGED_PUNISH
     else:
         hours_surplus_copy += days_unlogged * UNLOGGED_PUNISH
@@ -165,7 +166,7 @@ def compute_sleep_stats(user_data):
         surplus=hours_surplus,
         score=sleeptober_score,
         legacy_score=legacy_score,
-        debug=f"{hours_deficit_copy:+.2f},{hours_surplus_copy:+.2f}",
+        debug=f"{fmt_hours((hours_mean-UNLOGGED_PUNISH) if hours_mean <= LOWER + (UPPER - LOWER) * DEFICIT_PUNISH / (DEFICIT_PUNISH + SURPLUS_PUNISH) else (hours_mean+UNLOGGED_PUNISH))} ⁽ˢⁿᵉᵃᵏʸ⁾",
     )
     """
     # Notes about Abstract Score
@@ -207,7 +208,7 @@ def compute_sleep_stats(user_data):
 
 @bot.event
 async def on_ready():
-    print(f"[ Logged in as {bot.user} (ID={bot.user.id}) ]")
+    print(f"[ '{bot.user}' ({bot.user.id}) is ready. ]")
 
 @bot.command(aliases=["sleep","s",":3"])
 async def slept(
@@ -277,8 +278,6 @@ async def slept(
         store_data(data)
 
     # Reaction for visual feedback on success.
-    if hours == 24.0:
-        await ctx.message.add_reaction('💤')
     if hours == 0.0:
         await ctx.message.add_reaction('💀')
     elif hours < 4.0:
@@ -287,6 +286,8 @@ async def slept(
         await ctx.message.add_reaction("<:wokege:1176108188685324319>")
     else:
         await ctx.message.add_reaction("<:bedge:1176108745865044011>")
+    if hours == 24.0:
+        await ctx.message.add_reaction('💤')
 
 
 @bot.group(aliases=["p"], invoke_without_command=True)
@@ -449,9 +450,14 @@ async def leaderboard(
                 }.get(sort_stat, lambda ss: f"`{getattr(ss, sort_stat)}`(?)") # Fallback formatter.
                 fmt_user_stats = lambda user_id, sleep_stats: f"""{fmt_stats(sleep_stats)} <@{user_id}> ({sleep_stats.days}d)"""
 
+        if sort is not None:
+            text = f"""-# Sorted in {"descending" if sort_down else "ascending"} order by `{sort_stat}`.\n"""
+        else:
+            text = """-# *Shown:* `-deficit` `+surplus` ~ avg. sleep <user> (days logged).\n"""
+
         data = load_data()
         if not data:
-            text = "\n...seems like nobody has slept yet(??) (Be the first! `{COMMAND_PREFIX}sleep`)"
+            text += "\n...wait, seems like nobody has slept yet(??) Be the first! (→ `{COMMAND_PREFIX}slept`)"
         else:
             current_date_index = get_saturating_sleeptober_index()
             # Load global leaderboard data, sorted as determined above.
@@ -483,7 +489,7 @@ async def leaderboard(
             else:
                 leaderboard_top = global_leaderboard[:top_n_shown]
                 leaderboard_chunk = global_leaderboard[user_index-USER_PREVIEW_WINDOW:user_index+USER_PREVIEW_WINDOW+1]
-            text = f"{fmt_leaderboard_entries(leaderboard_top, 0)}\n"
+            text += f"{fmt_leaderboard_entries(leaderboard_top, 0)}\n"
             if len(leaderboard_top) < len(global_leaderboard):
                 text += "⋅ ⋅ ⋅\n"
             if leaderboard_chunk:
@@ -491,11 +497,9 @@ async def leaderboard(
                 if user_index+USER_PREVIEW_WINDOW+1 < len(global_leaderboard):
                     text += "⋅ ⋅ ⋅\n"
         if sort is not None:
-            text += f"""-# Sorted in {"descending" if sort_down else "ascending"} order by `{sort_stat}`."""
+            text += ""
         else:
-            text += """-# *Shown:* `-deficit` `+surplus` ~ avg. sleep <user> (days logged).
-
--# Achieve a better overall score by logging more days, minimizing your total sleep deficit (<8h) and surplus (>9h, is punished less)."""
+            text += """\n-# Tip: Achieve a better overall score by logging more days and minimizing your total sleep deficit (<8h) and -surplus (>9h, but punished less)."""
 
         # Make mentions load correctly(??) (code inspired by /jackra1n/substiify-v2).
         mentions_str = ''.join(
@@ -509,7 +513,7 @@ async def leaderboard(
 
         # Assemble and send embed.
         embed = discord.Embed(
-            title="D-INFK Sleeptober 2024 Leaderboard <:bedge:1176108745865044011>",
+            title=f"Sleeptober Leaderboard 2024 <:bedge:1176108745865044011>",
             description=text,
             color=COLORS['low']
         )
@@ -530,7 +534,8 @@ async def zzz(ctx):
         return
     else:
         await ctx.message.add_reaction('💤')
-        exit() # FIXME: More graceful shutdown?
+        print(f"[ '{bot.user}' is shutting down. ]")
+        await bot.close()
 
 if __name__=="__main__":
     # Ensure data file is ready.
