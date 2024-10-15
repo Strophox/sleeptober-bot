@@ -29,7 +29,7 @@ COLORS = {
 
 COMMAND_PREFIX = ">>="
 
-DESCRIPTION = """Sleeptober
+DESCRIPTION = f"""Sleeptober
 
 Official 2024 Prompt List:
 
@@ -49,8 +49,9 @@ Official 2024 Prompt List:
 
 > Sleeptober was created as a challenge to improve one's sleeping skills and develop positive sleeping habits.
 
-Source code: https://github.com/Strophox/sleeptober-bot
-*This bot is developed heavily ad-hoc and just for fun :-)"""
+* To reset/delete your data see `{COMMAND_PREFIX}profile delete`.
+* Source code: https://github.com/Strophox/sleeptober-bot
+* This bot is developed heavily ad-hoc and just for fun :-)"""
 
 intents = discord.Intents.default()
 intents.members = True
@@ -392,10 +393,11 @@ async def reset(
 @bot.command(aliases=["lb"])
 async def leaderboard(
         ctx,
-        sort: str | None = commands.parameter(description="Stat by which to sort."),
+        sort: str | None = commands.parameter(description="Order in-, and stat by which to sort."),
+        top_n_shown: int | None = commands.parameter(default=10, description="Size of the top users preview."), # FIXME This could make the message too long with large enough leaderboard and top_n_shown.
         #user: discord.User | None = commands.parameter(description="User whose position to view."), TODO: Remove debug.
     ):
-    """Shows the current (global) Sleeptober leaderboard."""
+    """Shows the current, global Sleeptober user rankings."""
     async with ctx.typing():
         # Load user data.
         #if user is not None: TODO: Remove debug.
@@ -465,19 +467,20 @@ async def leaderboard(
                     f"""{1+rank_offset+i}. {"**" if rank_offset+i == user_index else ""}{fmt_user_stats(user_id, sleep_stats)}{"**" if rank_offset+i == user_index else ""}"""
                     for i, (user_id, sleep_stats) in enumerate(entries)
                 )
-            CAP_TOP_PREVIEW = 10
-            RADIUS_CHUNK_WINDOW = 2
-            if user_index-RADIUS_CHUNK_WINDOW <= CAP_TOP_PREVIEW+1:
-                leaderboard_top = global_leaderboard[:max(CAP_TOP_PREVIEW,user_index+RADIUS_CHUNK_WINDOW+1)]
+            top_n_shown = max(top_n_shown, 0)
+            USER_PREVIEW_WINDOW = 2
+            if user_index-USER_PREVIEW_WINDOW <= top_n_shown+1:
+                leaderboard_top = global_leaderboard[:max(top_n_shown,user_index+USER_PREVIEW_WINDOW+1)]
                 leaderboard_chunk = []
             else:
-                leaderboard_top = global_leaderboard[:CAP_TOP_PREVIEW]
-                leaderboard_chunk = global_leaderboard[user_index-RADIUS_CHUNK_WINDOW:user_index+RADIUS_CHUNK_WINDOW+1]
+                leaderboard_top = global_leaderboard[:top_n_shown]
+                leaderboard_chunk = global_leaderboard[user_index-USER_PREVIEW_WINDOW:user_index+USER_PREVIEW_WINDOW+1]
             text = f"{fmt_leaderboard_entries(leaderboard_top, 0)}\n"
-            text += "⋅ ⋅ ⋅\n"
+            if len(leaderboard_top) < len(global_leaderboard):
+                text += "⋅ ⋅ ⋅\n"
             if leaderboard_chunk:
-                text += f"{fmt_leaderboard_entries(leaderboard_chunk, user_index-RADIUS_CHUNK_WINDOW)}\n"
-                if user_index+RADIUS_CHUNK_WINDOW+1 < len(global_leaderboard):
+                text += f"{fmt_leaderboard_entries(leaderboard_chunk, user_index-USER_PREVIEW_WINDOW)}\n"
+                if user_index+USER_PREVIEW_WINDOW+1 < len(global_leaderboard):
                     text += "⋅ ⋅ ⋅\n"
         if sort is not None:
             text += f"""-# Sorted in {"descending" if sort_down else "ascending"} order by `{sort_stat}`."""
