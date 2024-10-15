@@ -72,7 +72,7 @@ SleepStats = collections.namedtuple("SleepStats", [
     "deficit",
     "surplus",
     "score",
-    "experimental_score",
+    "legacy_score",
 ])
 
 def fmt_hours_f(hours):
@@ -134,17 +134,17 @@ def compute_sleep_stats(user_data):
             hours_surplus += h - UPPER
     hours_deficit_copy = hours_deficit
     hours_surplus_copy = hours_surplus
-    # Compute normal Sleeptober score,
-    sleeptober_score = 1000 * days_logged - hours_deficit_copy - hours_surplus_copy / 2
-    # Compute experimental Sleeptober score,
+    # Compute legacy Sleeptober score,
+    legacy_score = 1000 * days_logged - hours_deficit_copy - hours_surplus_copy / 2
+    # Compute Sleeptober score,
     placeholder_night = hours_mean - 3 * hours_deviation
     if placeholder_night < LOWER:
         hours_deficit_copy += days_unlogged*(LOWER - placeholder_night)
     elif UPPER < placeholder_night:
         hours_surplus_copy += days_unlogged*(placeholder_night - UPPER)
-    experimental_score = 1000 - hours_deficit_copy - hours_surplus_copy / 2
+    sleeptober_score = 1000 - hours_deficit_copy - hours_surplus_copy / 2
     if days_unlogged > days_logged:
-        experimental_score -= 500
+        sleeptober_score -= 500
     return SleepStats(
         days=days_logged,
         min=hours_min,
@@ -155,7 +155,7 @@ def compute_sleep_stats(user_data):
         deficit=hours_deficit,
         surplus=hours_surplus,
         score=sleeptober_score,
-        experimental_score=experimental_score,
+        legacy_score=legacy_score,
     )
     """
     # Notes about Abstract Score
