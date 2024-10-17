@@ -261,7 +261,7 @@ async def slept(
                 raise ValueError
         except:
             await ctx.message.add_reaction('🙅')
-            await ctx.message.reply(f"(If you want to specify the night you're logging (second argument) it needs to be an integer in the range [1, {date_cap}])", delete_after=60)
+            await ctx.message.reply(f"(If you want to specify the night you're logging (second argument) it needs to be an integer in the range [1, {date_index_cap+1}])", delete_after=60)
             return
     else:
         # No day provided by user, default to setting last night's sleep.
