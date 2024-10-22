@@ -168,43 +168,6 @@ def compute_sleep_stats(user_data):
         legacy_score=legacy_score,
         debug=f"{fmt_hours((hours_mean-UNLOGGED_PUNISH) if hours_mean <= LOWER + (UPPER - LOWER) * DEFICIT_PUNISH / (DEFICIT_PUNISH + SURPLUS_PUNISH) else (hours_mean+UNLOGGED_PUNISH))} ⁽ˢⁿᵉᵃᵏʸ⁾",
     )
-    """
-    # Notes about Abstract Score
-    ## Criteria for scoring
-    * Close to the idea of original Sleeptober ("Sleep 8 hours [every night]").
-    * Close to the idea of having good sleep (*informal, research scientific criteria).
-    * Reward number of days logged.
-        - Indicative of user participation.
-        - Bigger data/sample size to compute score from.
-    * Punish sleep deficit.
-        - Too little sleep is detrimental:
-        ```
-        0h "good luck"
-        1h "any nap is better than no nap"
-        2h "bruh"
-        3h "💀"
-        4h "it's joever"
-        5h "oh no"
-        6h "not good, but ≈minimum to function alright"
-        7h "still fine, could be closer to 8"
-        ```
-    * Punish oversleeping.
-        - Too much sleep may contribute to otherwise consistent, healthy sleep falling out of balance.
-        - Sleeping way too much may cut into productivity of the next day.
-        - If one slept too little the day before, sleeping more cannot proportionally 'make up' for last night's deficit.
-        ```
-        9h "nice, could be closer to 8"
-        10h "bit long but could be less"
-        11h "this is too long."
-        12-14h "you've lost half your day."
-        15-17h "oh no"
-        17-24h "bruh"
-        ```
-    * Reward consistency / Punish inconsistency.
-        - Consistent sleep is the best.
-        - Sleeping 8h every day but offset by hours isn't actually healthy probably. (*time of sleep currently untracked)
-        - TODO: Incorporate variance?
-    """
 
 @bot.event
 async def on_ready():
@@ -507,7 +470,7 @@ async def leaderboard(
             for entries in [leaderboard_top,leaderboard_chunk]
             for (user_id, _) in entries
         )
-        mentions_msg = await ctx.send(f"({random.choice('🌙🌓🌛🌕🌝🌗🌜🌑🌚🌘🌖🌒🌔')} loading names...)")
+        mentions_msg = await ctx.send(f"({random.choice("🌑🌒🌓🌔🌕🌖🌗🌘🌙🌚🌛🌜🌝")} loading names...)")
         await mentions_msg.edit(content=mentions_str)
         await mentions_msg.delete()
 
@@ -515,9 +478,16 @@ async def leaderboard(
         embed = discord.Embed(
             title=f"Sleeptober Leaderboard 2024 <:bedge:1176108745865044011>",
             description=text,
-            color=COLORS['low']
+            color=COLORS["low"]
         )
         await ctx.send(embed=embed)
+
+@bot.command(hidden=True)
+async def sudo(ctx):
+    """[admin] Superuser do."""
+    if not ctx.message.author.bot and str(ctx.message.author.id) in CONFIG["admin_ids"]:
+        exec("a = None\n" + ctx.message.content[len(f"{COMMAND_PREFIX}sudo"):].lstrip(), globals(), globals())
+        if a is not None: await ctx.send(a)
 
 @bot.command()
 async def zzz(ctx):
@@ -528,14 +498,15 @@ async def zzz(ctx):
         return
     author_user_id = ctx.message.author.id
 
-    # Try shut down.
-    if str(author_user_id) not in CONFIG['admin_ids']:
+    # Needs to be 'admin'.
+    if str(author_user_id) not in CONFIG["admin_ids"]:
         await ctx.message.add_reaction('🔐')
         return
-    else:
-        await ctx.message.add_reaction('💤')
-        print(f"[ '{bot.user}' is shutting down. ]")
-        await bot.close()
+
+    # Shut down.
+    await ctx.message.add_reaction('💤')
+    print(f"[ '{bot.user}' is shutting down. ]")
+    await bot.close()
 
 if __name__=="__main__":
     # Ensure data file is ready.
