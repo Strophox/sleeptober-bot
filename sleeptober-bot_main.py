@@ -27,6 +27,12 @@ COLORS = {
     "dark":  discord.Color.from_str("#29313D"),
 }
 
+EMOJIS = {
+    "bedge": "<:bedge:1176108745865044011>",
+    "wokege": "<:wokege:1176108188685324319>",
+    "despairge": "<:despairge:1212140064025485322>",
+}
+
 COMMAND_PREFIX = ">>="
 
 DESCRIPTION = f"""Sleeptober
@@ -49,7 +55,7 @@ Official 2024 Prompt List:
 
 > Sleeptober was created as a challenge to improve one's sleeping skills and develop positive sleeping habits.
 
-* To reset/delete your data see `{COMMAND_PREFIX}profile delete`.
+* To reset / permanently delete your data see `{COMMAND_PREFIX}profile reset`.
 * Source code: https://github.com/Strophox/sleeptober-bot
 * This bot is developed heavily ad-hoc and just for fun :-)"""
 
@@ -191,8 +197,8 @@ async def slept(
     # Compute how many hours of sleep are being logged.
     if hours_slept is None:
         await ctx.message.reply(f"""Basic usage:
-- \"I slept a healthy 8.5h last night <:bedge:1176108745865044011>\" → `{COMMAND_PREFIX}slept 8.5`
-- \"Oof! I forgot to log 7h 56min for the 4th-to-5th night\" → `{COMMAND_PREFIX}slept 7:56 4`""")
+- "I slept a healthy 8.5h last night {EMOJIS["bedge"]}" → `{COMMAND_PREFIX}slept 8.5`
+- "Oof! I forgot to log 7h 56min for the 4th-to-5th night" → `{COMMAND_PREFIX}slept 7:56 4`""")
         return
 
     # Try parsing as float.
@@ -244,11 +250,11 @@ async def slept(
     if hours == 0.0:
         await ctx.message.add_reaction('💀')
     elif hours < 4.0:
-        await ctx.message.add_reaction("<:despairge:1212140064025485322>")
+        await ctx.message.add_reaction(EMOJIS["despairge"])
     elif hours < 6.0:
-        await ctx.message.add_reaction("<:wokege:1176108188685324319>")
+        await ctx.message.add_reaction(EMOJIS["wokege"])
     else:
-        await ctx.message.add_reaction("<:bedge:1176108745865044011>")
+        await ctx.message.add_reaction(EMOJIS["bedge"])
     if hours == 24.0:
         await ctx.message.add_reaction('💤')
 
@@ -273,16 +279,26 @@ async def profile(
 
         # Generate profile.
         if user_data is None:
-            text = f"...hasn't slept yet <:wokege:1176108188685324319>\n\nParticipate with `{COMMAND_PREFIX}slept`"
+            text = f"...not slept yet {EMOJIS['wokege']}\n\n(For usage see `{COMMAND_PREFIX}slept`)"
         else:
             # Truncate data.
             current_date_index = get_saturating_sleeptober_index()
             user_data = user_data[:current_date_index+1]
 
+            # Special text for Sleeptober completion.
+            sleeptober_over = len(user_data) == 31
+            fully_slept = sum(1 for x in user_data if x is not None) == 31
+            if fully_slept:
+                text = f"""### *⋆ ﾟ☁ ｡✧ fully slept ★ ﾟ☾｡⋆*
+-# We hope you had fun and wish you much success
+-# in future endeavours of becoming well-rested {EMOJIS['bedge']}💤\n"""
+            else:
+                text = ""
+
             # Add ASCII graph.
             (maxwidth_day_index, maxwidth_hours) = (len(str(len(user_data))), 5)
-            text = "```c\n"
-            text +=  f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}} ┍{7*'┯'}┳┳{14*'┯'}┑\n"
+            text += "```c\n"
+            text += f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}} ┍{7*'┯'}┳┳{14*'┯'}┑\n"
             for day_index, hours in enumerate(user_data):
                 quarter_hours = round(hours * 4) if hours is not None else 0
                 chars = ['│'] + 7*[' '] + 2*['┆'] + 14*[' '] + ['│']
@@ -303,15 +319,16 @@ async def profile(
                         quarter_hours = 0
                     i += 1
                 text += f"{day_index+1: >{maxwidth_day_index}}. {fmt_hours(hours) if hours is not None else '?': >{maxwidth_hours}} {''.join(chars)}\n"
-            #text += f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}}  ┕{7*'┷'}┷┷{14*'┷'}┙\n"
+            if sleeptober_over:
+                text += f"{' ': >{maxwidth_day_index}}  {' ': >{maxwidth_hours}} ┕{7*'┷'}┻┻{14*'┷'}┙\n"
             text += "```\n"
 
             # Add value summary.
             sleep_stats = compute_sleep_stats(user_data)
             text += f"""Sleep statistics
-* `{sleep_stats.days}` days logged, average `{fmt_hours(sleep_stats.mean)}` h, median `{fmt_hours(sleep_stats.median)}` h.
-* Total hours short of 8h `-{fmt_hours(sleep_stats.deficit)}` h, Total above 9h `+{fmt_hours(sleep_stats.surplus)}` h.
-* Minimum `{fmt_hours(sleep_stats.min)}` h, maximum `{fmt_hours(sleep_stats.max)}` h, deviation `{fmt_hours(sleep_stats.deviation)}` h."""
+* `{sleep_stats.days}` days logged, Mean `{fmt_hours(sleep_stats.mean)}` h, Median `{fmt_hours(sleep_stats.median)}` h.
+* Total short of 8h `-{fmt_hours(sleep_stats.deficit)}` h, Total above 9h `+{fmt_hours(sleep_stats.surplus)}` h.
+* Min `{fmt_hours(sleep_stats.min)}` h, Max `{fmt_hours(sleep_stats.max)}` h, Deviation `{fmt_hours(sleep_stats.deviation)}` h."""
 
         # Assemble and send embed.
         embed = discord.Embed(
@@ -409,7 +426,7 @@ async def leaderboard(
                     "deviation": lambda ss: f"dev. {fmt_hours(ss.deviation)} h.",
                     # "deficit": lambda ss: f"`{f'-{fmt_hours_f(ss.deficit)}': >6}`",
                     # "surplus": lambda ss: f"`{f'+{fmt_hours_f(ss.surplus)}': >6}`",
-                    "score": lambda ss: f"`{ss.score:.02f}`✰",
+                    "score": lambda ss: f"`{ss.score:.02f}`☆",
                 }.get(sort_stat, lambda ss: f"`{getattr(ss, sort_stat)}`(?)") # Fallback formatter.
                 fmt_user_stats = lambda user_id, sleep_stats: f"""{fmt_stats(sleep_stats)} <@{user_id}> ({sleep_stats.days}d)"""
 
@@ -476,7 +493,7 @@ async def leaderboard(
 
         # Assemble and send embed.
         embed = discord.Embed(
-            title=f"Sleeptober Leaderboard 2024 <:bedge:1176108745865044011>",
+            title=f"Sleeptober Leaderboard 2024 {EMOJIS['bedge']}",
             description=text,
             color=COLORS["low"]
         )
