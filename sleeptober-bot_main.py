@@ -383,8 +383,9 @@ async def reset(
 @bot.command(aliases=["lb"])
 async def leaderboard(
         ctx,
-        sort: str | None = commands.parameter(description="Order in-, and stat by which to sort."),
-        top_n_shown: int | None = commands.parameter(default=10, description="Size of the top users preview."), # FIXME This could make the message too long with large enough leaderboard and top_n_shown.
+        sort_criteria: str | None = commands.parameter(description="Leaderboard sorting: Stat and order with which to sort."),
+        min_days: int | None = commands.parameter(default=1, description="Leaderboard filter: Minimum number of days logged."),
+        show_top_n: int | None = commands.parameter(default=10, description="Leaderboard preview size: How many top users to show."), # FIXME This could make the message too long with large enough leaderboard and show_top_n.
         #user: discord.User | None = commands.parameter(description="User whose position to view."), TODO: Remove debug.
     ):
     """Shows the current, global Sleeptober user rankings."""
@@ -404,18 +405,21 @@ async def leaderboard(
         # Handle stat sorting and formatting mechanism.
         # Initialize standard user stats formatter.
         fmt_user_stats = lambda user_id, sleep_stats: f"""`{f'-{fmt_hours(sleep_stats.deficit)}': >6}` `{f'+{fmt_hours(sleep_stats.surplus)}': >6}` ~ {fmt_hours(sleep_stats.mean)} h. <@{user_id}> ({sleep_stats.days}d)"""
-        if sort is None:
-            sort_stat = "score" # Last column is sleeptober_score.
+        if sort_criteria is None:
+            sort_stat = "score"
             sort_down = True
         else:
-            if not (sort.startswith("+") or sort.startswith("-")) or sort[1:] not in SleepStats._fields:
-                await ctx.message.reply(f"""Advanced leaderboard usage:
-- "Sort downwards by 'Sleeptober' score" (default) → `{COMMAND_PREFIX}lb -score`.
+            if not (sort_criteria.startswith("+") or sort_criteria.startswith("-")) or sort_criteria[1:] not in SleepStats._fields:
+                await ctx.message.reply(f"""Advanced leaderboard usage: `{COMMAND_PREFIX}lb sortOrderAndStat minDaysLogged showTopUsers`
 - *Sort orders:* `-` for descending, `+` for ascending.
-- *Sort criteria:* {", ".join(f"`{field}`" for field in SleepStats._fields)}.""")
+- *Statistics to sort by:* {", ".join(f"`{field}`" for field in SleepStats._fields)}.
+Examples:
+- "Sort downwards by average sleep" → `{COMMAND_PREFIX}lb -mean`.
+- "Sleep deviation for people who slept at least 7 days in ascending order" → `{COMMAND_PREFIX}lb +deviation 7`.
+- "Basically show the entire leaderboard (≥0 days logged, ≤999 people)" → `{COMMAND_PREFIX}lb -score 0 999`.""")
                 return
-            sort_stat = sort[1:]
-            sort_down = sort[0] == "-"
+            sort_stat = sort_criteria[1:]
+            sort_down = sort_criteria[0] == "-"
             if sort_stat not in {"days","mean","deficit","surplus"}:
                 fmt_stats = {
                     # "days": lambda ss: f"{ss.days}d",
@@ -430,24 +434,27 @@ async def leaderboard(
                 }.get(sort_stat, lambda ss: f"`{getattr(ss, sort_stat)}`(?)") # Fallback formatter.
                 fmt_user_stats = lambda user_id, sleep_stats: f"""{fmt_stats(sleep_stats)} <@{user_id}> ({sleep_stats.days}d)"""
 
-        if sort is not None:
-            text = f"""-# Sorted in {"descending" if sort_down else "ascending"} order by `{sort_stat}`.\n"""
+        current_date_index = get_saturating_sleeptober_index()
+        min_days = max(0, min(min_days, current_date_index+1))
+
+        if sort_criteria is not None:
+            text = f"""-# Sorted in {"descending" if sort_down else "ascending"} order by `{sort_stat}`{f" (≥{min_days} days logged)" if min_days > 1 else ""}.\n"""
         else:
             text = """-# *Shown:* `-deficit` `+surplus` ~ avg. sleep <user> (days logged).\n"""
 
         data = load_data()
         if not data:
-            text += "\n...wait, seems like nobody has slept yet(??) Be the first! (→ `{COMMAND_PREFIX}slept`)"
+            text += "\n...seems like nobody has slept yet(??) (be the first → `{COMMAND_PREFIX}slept`)"
         else:
-            current_date_index = get_saturating_sleeptober_index()
             # Load global leaderboard data, sorted as determined above.
             global_leaderboard = sorted(
                 (
                     (
                         user_id,
-                        compute_sleep_stats(user_data[:current_date_index+1])
+                        sleep_stats,
                     )
                     for (user_id, user_data) in data.items()
+                    if (sleep_stats:=compute_sleep_stats(user_data[:current_date_index+1])).days >= min_days
                 ),
                 key=lambda id_stats: getattr(id_stats[1], sort_stat),
                 reverse=sort_down
@@ -461,13 +468,13 @@ async def leaderboard(
                     f"""{1+rank_offset+i}. {"**" if rank_offset+i == user_index else ""}{fmt_user_stats(user_id, sleep_stats)}{"**" if rank_offset+i == user_index else ""}"""
                     for i, (user_id, sleep_stats) in enumerate(entries)
                 )
-            top_n_shown = max(top_n_shown, 0)
+            show_top_n = max(show_top_n, 0)
             USER_PREVIEW_WINDOW = 2
-            if user_index-USER_PREVIEW_WINDOW <= top_n_shown+1:
-                leaderboard_top = global_leaderboard[:max(top_n_shown,user_index+USER_PREVIEW_WINDOW+1)]
+            if user_index-USER_PREVIEW_WINDOW <= show_top_n+1:
+                leaderboard_top = global_leaderboard[:max(show_top_n,user_index+USER_PREVIEW_WINDOW+1)]
                 leaderboard_chunk = []
             else:
-                leaderboard_top = global_leaderboard[:top_n_shown]
+                leaderboard_top = global_leaderboard[:show_top_n]
                 leaderboard_chunk = global_leaderboard[user_index-USER_PREVIEW_WINDOW:user_index+USER_PREVIEW_WINDOW+1]
             text += f"{fmt_leaderboard_entries(leaderboard_top, 0)}\n"
             if len(leaderboard_top) < len(global_leaderboard):
@@ -476,7 +483,7 @@ async def leaderboard(
                 text += f"{fmt_leaderboard_entries(leaderboard_chunk, user_index-USER_PREVIEW_WINDOW)}\n"
                 if user_index+USER_PREVIEW_WINDOW+1 < len(global_leaderboard):
                     text += "⋅ ⋅ ⋅\n"
-        if sort is not None:
+        if sort_criteria is not None:
             text += ""
         else:
             text += """\n-# Tip: Achieve a better overall score by logging more days and minimizing your total sleep deficit (<8h) and -surplus (>9h, but punished less)."""
@@ -487,9 +494,10 @@ async def leaderboard(
             for entries in [leaderboard_top,leaderboard_chunk]
             for (user_id, _) in entries
         )
-        mentions_msg = await ctx.send(f"({random.choice("🌑🌒🌓🌔🌕🌖🌗🌘🌙🌚🌛🌜🌝")} loading names...)")
-        await mentions_msg.edit(content=mentions_str)
-        await mentions_msg.delete()
+        if mentions_str:
+            mentions_msg = await ctx.send(f"({random.choice("🌑🌒🌓🌔🌕🌖🌗🌘🌙🌚🌛🌜🌝")} loading names...)")
+            await mentions_msg.edit(content=mentions_str)
+            await mentions_msg.delete()
 
         # Assemble and send embed.
         embed = discord.Embed(
