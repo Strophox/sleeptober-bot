@@ -338,19 +338,19 @@ async def profile(
         )
         await ctx.message.reply(embed=embed)
 
-# @profile.command()
-# async def raw(ctx):
-#     """Get your sleep data as raw list."""
-#     # Load user data.
-#     if ctx.message.author.bot:
-#         await ctx.message.add_reaction("🤖")
-#         return
-#     user_id = ctx.message.author.id
-#     data = load_data()
-#     user_data = data.get(str(user_id))
-#
-#     await ctx.message.add_reaction('✅')
-#     await ctx.message.reply(f"Raw sleep data: `{user_data}`", delete_after=60)
+@profile.command()
+async def raw(ctx):
+    """Get your sleep data as raw list."""
+    # Load user data.
+    if ctx.message.author.bot:
+        await ctx.message.add_reaction("🤖")
+        return
+    user_id = ctx.message.author.id
+    data = load_data()
+    user_data = data.get(str(user_id))
+
+    await ctx.message.add_reaction('✅')
+    await ctx.message.reply(f"Raw sleep data: `{user_data}`", delete_after=60)
 
 @profile.command()
 async def reset(
@@ -386,22 +386,18 @@ async def leaderboard(
         sort_criteria: str | None = commands.parameter(description="Leaderboard sorting: Stat and order with which to sort."),
         min_days: int | None = commands.parameter(default=1, description="Leaderboard filter: Minimum number of days logged."),
         show_top_n: int | None = commands.parameter(default=10, description="Leaderboard preview size: How many top users to show."), # FIXME This could make the message too long with large enough leaderboard and show_top_n.
-        #user: discord.User | None = commands.parameter(description="User whose position to view."), TODO: Remove debug.
     ):
     """Shows the current, global Sleeptober user rankings."""
     async with ctx.typing():
         # Load user data.
-        #if user is not None: TODO: Remove debug.
-        #    target_user_id = user.id
-        #else:
-        #    if ctx.message.author.bot:
-        #        await ctx.message.add_reaction("🤖")
-        #        return
-        #    target_user_id = ctx.message.author.id
         if ctx.message.author.bot:
             await ctx.message.add_reaction("🤖")
             return
         target_user_id = ctx.message.author.id
+
+        current_date_index = get_saturating_sleeptober_index()
+        min_days = max(0, min(min_days, current_date_index+1))
+
         # Handle stat sorting and formatting mechanism.
         # Initialize standard user stats formatter.
         fmt_user_stats = lambda user_id, sleep_stats: f"""`{f'-{fmt_hours(sleep_stats.deficit)}': >6}` `{f'+{fmt_hours(sleep_stats.surplus)}': >6}` ~ {fmt_hours(sleep_stats.mean)} h. <@{user_id}> ({sleep_stats.days}d)"""
@@ -433,9 +429,6 @@ Examples:
                     "score": lambda ss: f"`{ss.score:.02f}`☆",
                 }.get(sort_stat, lambda ss: f"`{getattr(ss, sort_stat)}`(?)") # Fallback formatter.
                 fmt_user_stats = lambda user_id, sleep_stats: f"""{fmt_stats(sleep_stats)} <@{user_id}> ({sleep_stats.days}d)"""
-
-        current_date_index = get_saturating_sleeptober_index()
-        min_days = max(0, min(min_days, current_date_index+1))
 
         if sort_criteria is not None:
             text = f"""-# Sorted in {"descending" if sort_down else "ascending"} order by `{sort_stat}`{f" (≥{min_days} days logged)" if min_days > 1 else ""}.\n"""
