@@ -431,7 +431,7 @@ Examples:
                 fmt_user_stats = lambda user_id, sleep_stats: f"""{fmt_stats(sleep_stats)} <@{user_id}> ({sleep_stats.days}d)"""
 
         if sort_criteria is not None:
-            text = f"""-# Sorted in {"descending" if sort_down else "ascending"} order by `{sort_stat}`{f" (≥{min_days} days logged)" if min_days > 1 else ""}.\n"""
+            text = f"""-# Sorted in {"descending" if sort_down else "ascending"} order by `{sort_stat}`{f" (and ≥{min_days}d)" if min_days > 1 else ""}.\n"""
         else:
             text = """-# *Shown:* `-deficit` `+surplus` ~ avg. sleep <user> (days logged).\n"""
 
