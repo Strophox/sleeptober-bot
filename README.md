@@ -13,7 +13,7 @@ python3 -m venv sleeptober-bot_venv
 source sleeptober-bot_venv/bin/activate
 # Installs discord.py dependency.
 pip install discord
-# Starts bot (requires sleeptober-bot_token.txt).
+# Starts bot (requires sleeptober-bot_config.json).
 python3 sleeptober-bot_main.py
 ```
 
