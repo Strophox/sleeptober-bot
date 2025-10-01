@@ -437,7 +437,7 @@ Examples:
 
         data = load_data()
         if not data:
-            text += "\n...seems like nobody has slept yet(??) (be the first → `{COMMAND_PREFIX}slept`)\n"
+            text += f"\n...seems like nobody has slept yet(??) (be the first → `{COMMAND_PREFIX}slept`)\n"
             mentions_str = ""
         else:
             # Load global leaderboard data, sorted as determined above.
