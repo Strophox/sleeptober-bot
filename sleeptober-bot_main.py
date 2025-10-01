@@ -437,7 +437,8 @@ Examples:
 
         data = load_data()
         if not data:
-            text += "\n...seems like nobody has slept yet(??) (be the first → `{COMMAND_PREFIX}slept`)"
+            text += "\n...seems like nobody has slept yet(??) (be the first → `{COMMAND_PREFIX}slept`)\n"
+            mentions_str = ""
         else:
             # Load global leaderboard data, sorted as determined above.
             global_leaderboard = sorted(
@@ -476,17 +477,20 @@ Examples:
                 text += f"{fmt_leaderboard_entries(leaderboard_chunk, user_index-USER_PREVIEW_WINDOW)}\n"
                 if user_index+USER_PREVIEW_WINDOW+1 < len(global_leaderboard):
                     text += "⋅ ⋅ ⋅\n"
+
+            # Make mentions load correctly(??) (code inspired by /jackra1n/substiify-v2).
+            mentions_str = ''.join(
+                f"<@{user_id}>"
+                for entries in [leaderboard_top,leaderboard_chunk]
+                for (user_id, _) in entries
+            )
+
         if sort_criteria is not None:
             text += ""
         else:
             text += """\n-# Tip: Achieve a better overall score by logging more days and minimizing your total sleep deficit (<8h) and -surplus (>9h, but punished less)."""
 
-        # Make mentions load correctly(??) (code inspired by /jackra1n/substiify-v2).
-        mentions_str = ''.join(
-            f"<@{user_id}>"
-            for entries in [leaderboard_top,leaderboard_chunk]
-            for (user_id, _) in entries
-        )
+        # Send mentions string.
         if mentions_str:
             mentions_msg = await ctx.send(f"({random.choice("🌑🌒🌓🌔🌕🌖🌗🌘🌙🌚🌛🌜🌝")} loading names...)")
             await mentions_msg.edit(content=mentions_str)
