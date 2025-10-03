@@ -37,7 +37,7 @@ COMMAND_PREFIX = ">>="
 
 DESCRIPTION = f"""Sleeptober
 
-Official 2024 Prompt List:
+Official 2025 Prompt List:
 
  1. sleep 8 hours   11. sleep 8 hours   21. sleep 8 hours
  2. sleep 8 hours   12. sleep 8 hours   22. sleep 8 hours
@@ -51,7 +51,7 @@ Official 2024 Prompt List:
 10. sleep 8 hours   20. sleep 8 hours   30. sleep 8 hours
                                         31. sleep 8 hours
 
-            #Sleeptober  #Sleeptober2024
+            #Sleeptober  #Sleeptober2025
 
 > Sleeptober was created as a challenge to improve one's sleeping skills and develop positive sleeping habits.
 
@@ -498,7 +498,7 @@ Examples:
 
         # Assemble and send embed.
         embed = discord.Embed(
-            title=f"Sleeptober Leaderboard 2024 {EMOJIS['bedge']}",
+            title=f"Sleeptober Leaderboard 2025 {EMOJIS['bedge']}",
             description=text,
             color=COLORS["low"]
         )
