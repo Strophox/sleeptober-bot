@@ -122,8 +122,9 @@ def get_saturating_sleeptober_index():
 def compute_sleep_stats(user_data):
     """Compute some SleepStats from user's raw hours-slept-each-night data with at least one data point."""
     hours = [h for h in user_data if h is not None]
+    current_date_index = get_saturating_sleeptober_index()
     days_logged = len(hours)
-    days_unlogged = len(user_data) - days_logged
+    days_unlogged = current_date_index+1 - days_logged
     hours_min = min(hours)
     hours_max = max(hours)
 
@@ -141,24 +142,29 @@ def compute_sleep_stats(user_data):
             hours_deficit += LOWER - h
         elif UPPER < h:
             hours_surplus += h - UPPER
-    # Compute legacy Sleeptober score,
+    # Compute legacy Sleeptober score.
     legacy_score = 1000 * days_logged - hours_deficit - hours_surplus / 2
-    # Compute Sleeptober score,
-    DEFICIT_PUNISH = 1
+    # Compute Sleeptober score.
+    # The Sleeptober score is essentially:
+    #   some_constant - hours_deficit - hours_surplus / factor
+    # However we add some hours_deficit for each night the user hasn't logged,
+    # by estimating they slept (hours_mean - 2 * hours_standard_deviation) on those nights.
+    # Log your sleep!
+    PUNISH_DEFICIT = 1
     # This choice of factor guarantees that sleeping 0h (deficit) and 24h (surplus) is punished equally
-    SURPLUS_PUNISH = LOWER / (24 - UPPER)
+    PUNISH_SURPLUS = LOWER / (24 - UPPER)
     # We assume the worst sleep within 2 standard deviations (cover '95%').
-    UNLOGGED_PUNISH = 2 * hours_deviation
-    hours_deficit_copy = hours_deficit
-    hours_surplus_copy = hours_surplus
-    # Maximize loss depending on whether score is worse on lower or upper bound within the range created by UNLOGGED_PUNISH standard deviation range around user's sleep mean.
-    if hours_mean <= LOWER + (UPPER - LOWER) * DEFICIT_PUNISH / (DEFICIT_PUNISH + SURPLUS_PUNISH):
-        hours_deficit_copy += days_unlogged * UNLOGGED_PUNISH
+    PUNISH_UNLOGGED = 2 * hours_deviation
+    hours_deficit_adjusted_for_unlogged = hours_deficit
+    hours_surplus_adjusted_for_unlogged = hours_surplus
+    # Maximize loss depending on whether score is worse on lower or upper bound within the range created by PUNISH_UNLOGGED standard deviation range around user's sleep mean.
+    if hours_mean <= LOWER + (UPPER - LOWER) * PUNISH_DEFICIT / (PUNISH_DEFICIT + PUNISH_SURPLUS):
+        hours_deficit_adjusted_for_unlogged += days_unlogged * PUNISH_UNLOGGED
     else:
-        hours_surplus_copy += days_unlogged * UNLOGGED_PUNISH
-    # This guarantees the score is always nonnegative, and exactly zero if the user sleeps 0h or 24h (maximal loss) each night.
-    SCORE_OFFSET = 31 * LOWER * DEFICIT_PUNISH
-    sleeptober_score = SCORE_OFFSET - hours_deficit_copy * DEFICIT_PUNISH - hours_surplus_copy * SURPLUS_PUNISH
+        hours_surplus_adjusted_for_unlogged += days_unlogged * PUNISH_UNLOGGED
+    # This guarantees the score is always nonnegative, and exactly zero if the user sleeps 0h or 24h (both lead to maximal loss) each night.
+    SCORE_OFFSET = 31 * LOWER * PUNISH_DEFICIT
+    sleeptober_score = SCORE_OFFSET - hours_deficit_adjusted_for_unlogged * PUNISH_DEFICIT - hours_surplus_adjusted_for_unlogged * PUNISH_SURPLUS
     if days_unlogged > days_logged:
         sleeptober_score /= 2
     return SleepStats(
@@ -172,7 +178,7 @@ def compute_sleep_stats(user_data):
         surplus=hours_surplus,
         score=sleeptober_score,
         legacy_score=legacy_score,
-        debug=f"{fmt_hours((hours_mean-UNLOGGED_PUNISH) if hours_mean <= LOWER + (UPPER - LOWER) * DEFICIT_PUNISH / (DEFICIT_PUNISH + SURPLUS_PUNISH) else (hours_mean+UNLOGGED_PUNISH))} ⁽ˢⁿᵉᵃᵏʸ⁾",
+        debug=f"{fmt_hours((hours_mean-PUNISH_UNLOGGED) if hours_mean <= LOWER + (UPPER - LOWER) * PUNISH_DEFICIT / (PUNISH_DEFICIT + PUNISH_SURPLUS) else (hours_mean+PUNISH_UNLOGGED))} ⁽ˢⁿᵉᵃᵏʸ⁾",
     )
 
 @bot.event
