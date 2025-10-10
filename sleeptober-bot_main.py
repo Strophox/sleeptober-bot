@@ -178,7 +178,7 @@ def compute_sleep_stats(user_data):
         surplus=hours_surplus,
         score=sleeptober_score,
         legacy_score=legacy_score,
-        debug=f"{fmt_hours((hours_mean-PUNISH_UNLOGGED) if hours_mean <= LOWER + (UPPER - LOWER) * PUNISH_DEFICIT / (PUNISH_DEFICIT + PUNISH_SURPLUS) else (hours_mean+PUNISH_UNLOGGED))} ⁽ˢⁿᵉᵃᵏʸ⁾",
+        debug=round(hours_variance * (LOWER - hours_mean)**2, 4),
     )
 
 @bot.event
