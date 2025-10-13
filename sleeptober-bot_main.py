@@ -516,6 +516,9 @@ async def sudo(ctx):
     if not ctx.message.author.bot and str(ctx.message.author.id) in CONFIG["admin_ids"]:
         exec("a = None\n" + ctx.message.content[len(f"{COMMAND_PREFIX}sudo"):].lstrip(), globals(), globals())
         if a is not None: await ctx.send(a)
+    else:
+        await ctx.message.reply(f"User is not in the sudoers file. This incident will be reported.", delete_after=60)
+
 
 @bot.command()
 async def zzz(ctx):
