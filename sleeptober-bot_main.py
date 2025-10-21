@@ -80,6 +80,7 @@ SleepStats = collections.namedtuple("SleepStats", [
     "surplus",
     "score",
     "legacy_score",
+    "experimental_score",
     "debug",
 ])
 
@@ -167,6 +168,10 @@ def compute_sleep_stats(user_data):
     sleeptober_score = SCORE_OFFSET - hours_deficit_adjusted_for_unlogged * PUNISH_DEFICIT - hours_surplus_adjusted_for_unlogged * PUNISH_SURPLUS
     if days_unlogged > days_logged:
         sleeptober_score /= 2
+    experimental_score = round(
+        (1+hours_variance)
+        * (1+(LOWER - hours_mean)**2)
+    , 4)
     return SleepStats(
         days=days_logged,
         min=hours_min,
@@ -178,7 +183,8 @@ def compute_sleep_stats(user_data):
         surplus=hours_surplus,
         score=sleeptober_score,
         legacy_score=legacy_score,
-        debug=round(hours_variance * (LOWER - hours_mean)**2, 4),
+        experimental_score=experimental_score,
+        debug=((1+hours_variance), (1+(LOWER - hours_mean)**2), days_unlogged),
     )
 
 @bot.event
