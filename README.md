@@ -6,6 +6,10 @@ It features basic functionality, such as manually logging sleep (`>>=slept ...`)
 
 ## How to run
 
+Requirements:
+- A file `sleeptober-bot_config.json` with contents of the form: `{'token': 'Discord Bot Token Here', 'admin_ids': ['Discord User ID Here', ...]}` (i.e. containing the Discord bot token as string and a (possibly empty) list of 'bot admin' user IDs in plain text.)
+
+The following commands can be run in terminal on Linux to start the bot:
 ```bash
 # Makes a new virtual environment.
 python3 -m venv sleeptober-bot_venv
@@ -17,8 +21,7 @@ pip install discord
 python3 sleeptober-bot_main.py
 ```
 
-- A file `sleeptober-bot_config.json` containing the Discord bot token and a list of 'bot admin' user IDs in plain text (`{'token': 'Bot Token Here', 'admin_ids': ['User ID Here', ...]}`) is required.
-- (A file `sleeptober-bot_data.json` containing bot data will be automatically created if it doesn't exist.)
+A file `sleeptober-bot_data.json` (containing bot data) will be automatically created if it doesn't exist.
 
 
 # Sleeptober
